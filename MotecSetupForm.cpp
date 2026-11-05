@@ -2254,6 +2254,18 @@ static bool findVehicleInDb(const std::string& rawName, VehicleInfo& out) {
     return false;
 }
 
+// Display vehicle name for Summary tab: prefer DB alias over raw car name.
+// Appends '*' to mark that the displayed name is an in-game alias, not the
+// technical model identifier. Non-AMS2 names (AC EVO / PMR) never match the
+// embedded DB and pass through unchanged.
+static String displayVehicleName(const std::string& rawName)
+{
+    VehicleInfo info;
+    if (!rawName.empty() && findVehicleInDb(rawName, info) && !info.alias.empty())
+        return liveNameUtf8(info.alias) + L"*";
+    return liveNameUtf8(rawName);
+}
+
 void __fastcall TFormMotecSetup::UpdateBrakeTemps(const std::vector<LapStats>& laps)
 {
     if (laps.empty()) {
@@ -3320,7 +3332,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 		if (frame.mTrackLocation[0])
 			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(frame.mTrackLocation));
 		if (frame.mCarName[0])
-			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + liveNameUtf8(frame.mCarName));
+			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + displayVehicleName(std::string(frame.mCarName)));
 		pushLiveStatusToTablet(std::string(frame.mCarName), std::string(frame.mTrackLocation), 0);
 		sessionLapCounter = 0;
 		lastCompletedLaps = frame.mParticipantInfo[frame.mViewedParticipantIndex].mLapsCompleted;
@@ -3436,7 +3448,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
 
         // Show car/track names as soon as the lap starts.
         if (gfx.car_model[0])
-            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + liveNameUtf8(std::string(gfx.car_model)));
+            MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + displayVehicleName(std::string(gfx.car_model)));
         if (!liveTrackName.empty())
             MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(liveTrackName));
         pushLiveStatusToTablet(std::string(gfx.car_model), liveTrackName, liveLapNumber);

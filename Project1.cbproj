@@ -292,11 +292,30 @@
             <DependentOn>VehicleDb.h</DependentOn>
             <BuildOrder>30</BuildOrder>
         </CppCompile>
-        <None Include="VehicleDb.generated.inc">
+        <CppCompile Include="VehicleDbData_A_F.cpp">
+            <DependentOn>VehicleDbRow.h</DependentOn>
+            <BuildOrder>31</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="VehicleDbData_F_M.cpp">
+            <DependentOn>VehicleDbRow.h</DependentOn>
+            <BuildOrder>32</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="VehicleDbData_M_S.cpp">
+            <DependentOn>VehicleDbRow.h</DependentOn>
+            <BuildOrder>33</BuildOrder>
+        </CppCompile>
+        <CppCompile Include="VehicleDbData_S_V.cpp">
+            <DependentOn>VehicleDbRow.h</DependentOn>
+            <BuildOrder>34</BuildOrder>
+        </CppCompile>
+        <None Include="VehicleDbBuckets.h">
             <BuildOrder>29</BuildOrder>
         </None>
-        <None Include="VehicleDb.h">
+        <None Include="VehicleDbRow.h">
             <BuildOrder>28</BuildOrder>
+        </None>
+        <None Include="VehicleDb.h">
+            <BuildOrder>35</BuildOrder>
         </None>
         <FormResources Include="MotecSetupForm.dfm"/>
         <FormResources Include="MotecSettingsForm.dfm"/>

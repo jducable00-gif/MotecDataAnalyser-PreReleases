@@ -4,9 +4,9 @@
 // AC EVO et PMR n'y sont pas representes ; pour ces sims, les donnees theoriques
 // doivent provenir d'une autre source (ou rester absentes -> has* == false).
 //
-// Le fichier data/reference/ams2_vehicles_db.json est embarque sous forme de
-// tableau d'octets dans VehicleDb.cpp (genere par scripts/generate_vehicle_db.py)
-// et parse au premier acces avec le JsonParser de RuleConfig.h. L'application ne
+// Les donnees vivent dans des tableaux C++ lisibles (VehicleDbData_*.cpp), genere par
+// scripts/json_to_vehicle_db.py a partir de data/reference/ams2_vehicles_db.json, et sont
+// pre-construites au chargement du binaire (plus aucun JSON embarque ni parse). L'application ne
 // lit donc plus aucun fichier externe pour les donnees theoriques des vehicules :
 // plages min/max, pas, valeurs par defaut, masses/CG, temperatures optimales...
 // (voir .ai/skills/setup_analysis.md -- "The Three Layers of Truth", Layer 1).
@@ -24,12 +24,10 @@
 #include <string>
 #include <vector>
 
-class JsonValue;   // RuleConfig.h -- forward decl (parse interne au .cpp)
-
 // ===============================
 // Structures typrees de la base vehicules AMS2.
-// Chaque champ porte un "present" : le schema JSON evolue, on ne veut pas
-// d'undefined behavior sur les champs manquants des anciennes versions du DB.
+// Chaque champ porte un "present" : les donnees evoluent (nouvelles colonnes dans
+// VehicleDbRow.h + re-generation), on ne veut pas d'undefined behavior sur les champs manquants.
 // ===============================
 
 struct WheelBrakeData {
@@ -84,7 +82,8 @@ struct EnginePhysics {
 };
 
 struct VehicleInfo {
-    std::string name;              // cle du DB (ex "Alpine_A110_GT4_Evo")
+    std::string name;              // cle du DB (ex "Alpine A110 GT4 Evo")
+    std::string alias;             // Alias_name du JSON (ex "Brabham BT26A") ; nom d'affichage alternatif
     bool valid = false;            // true si l'entree a ete trouvee + parsee
     ChassisPhysics chassis;
     EnginePhysics engine;
@@ -94,8 +93,9 @@ struct VehicleInfo {
 
 // ===============================
 // Ams2VehicleDb -- point d'accès unique à la base embarquée (singleton).
-// Le JSON est parsé une seule fois, au premier appel. Si le parse échoue
-// (fichier corrompu), isValid() == false et find()/vehicleCount() sont sûrs.
+// La base est construite une seule fois, au premier appel, depuis les tableaux C++
+// pre-construits de VehicleDbData_*.cpp. Si aucune entree n'est produite, isValid() == false
+// et find()/vehicleCount() sont sûrs.
 // ===============================
 
 class Ams2VehicleDb {
@@ -107,7 +107,7 @@ public:
 
     static Ams2VehicleDb& instance();
 
-    bool isValid() const { return m_valid; }        // JSON embarqué parse avec succès ?
+    bool isValid() const { return m_valid; }        // base construite au chargement du binaire ?
     std::size_t vehicleCount() const;               // nombre de véhicules (0 si invalide)
 
     // Noms des véhicules, triés par ordre lexicographique (déterministe).
@@ -119,13 +119,13 @@ public:
     bool find(const std::string& name, VehicleInfo& car) const;
 
 private:
-    Ams2VehicleDb();                 // parse le JSON embarqué une seule fois
+    Ams2VehicleDb();                 // construit la base depuis les tableaux C++ (une seule fois)
     ~Ams2VehicleDb() {}              // non copiable -- singleton (constructeur privé)
 
     Ams2VehicleDb(const Ams2VehicleDb&);            // interdits : pas de copie du DB
     Ams2VehicleDb& operator=(const Ams2VehicleDb&);
 
-    bool m_valid;                    // true si le parse initial a réussi
+    bool m_valid;                    // true si la construction initiale a produit des entrees
     std::vector<VehicleInfo> m_vehicles;   // entrees valides, triees par nom (insensible casse)
     std::vector<std::string> m_lowerIndex;  // noms en minuscules, meme ordre que m_vehicles
 };

@@ -91,6 +91,30 @@ ENGINE_FIELDS = {
     "WaterWarningTemp":   b"\x6D\x47\xC1\xB2",   # float [deg C]
 }
 
+# Plausibility bounds for brake-temperature sanity checks (see _brake_temp_ok).
+BRAKE_TEMP_PLAUSIBLE_C = (0.0, 1500.0)
+
+
+def _is_num(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool) \
+        and x == x and abs(x) != float("inf")
+
+
+def _brake_temp_ok(v):
+    """True when a brake temperature [deg C] is finite AND in the plausible band.
+
+    Guards against id-matches that land on unrelated bytes (e.g. some kart BFFs
+    where OptimumTempRange decodes to 38470 / 1057104384). Returns False for any
+    non-numeric or out-of-band value so the caller can null it + warn loudly.
+    """
+    return _is_num(v) and BRAKE_TEMP_PLAUSIBLE_C[0] <= v <= BRAKE_TEMP_PLAUSIBLE_C[1]
+
+
+def _brake_pair_ok(pair):
+    """True when a [min,max] temp pair is present, numeric AND both in band."""
+    return (isinstance(pair, list) and len(pair) == 2
+            and all(_brake_temp_ok(v) for v in pair))
+
 
 # ---------------------------------------------------------------------------
 # CRD display-name extraction (DB keys)
@@ -221,8 +245,22 @@ def parse_chassis(data: bytes, warnings: list) -> dict:
                     continue
                 if values is None:              # 0x28 "Not Used"
                     cdata[name] = {"value": "not_used"}
-                elif name.endswith("Range"):    # f,f pair -> [min, max]
-                    cdata[name] = list(values)
+                elif name.endswith("Range"):    # f,f pair -> [min, max], plausibility-checked
+                    pair = list(values)
+                    if _brake_pair_ok(pair):
+                        cdata[name] = pair
+                    else:                       # implausible (e.g. kart BFF offset bug)
+                        warnings.append(
+                            "implausible %s for brake corner %s (%r); nulled"
+                            % (name, corner, pair))
+                elif name.startswith("FadeTorqueLoss"):   # fraction 0..1
+                    v = _single(values)
+                    if _is_num(v) and -0.5 <= v <= 2.0:
+                        cdata[name] = v
+                    else:                       # implausible torque-loss fraction
+                        warnings.append(
+                            "implausible %s for brake corner %s (%r); nulled"
+                            % (name, corner, v))
                 else:                           # scalar float
                     cdata[name] = _single(values)
                 found_any = True

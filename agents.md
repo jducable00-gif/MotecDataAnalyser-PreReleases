@@ -143,7 +143,7 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 | `MotecSetupAnalyzer.h` | Core types: `LapStats`, `DataProvider`, `AnalysisAlias`, `ChannelMapping`, `AnalysisRule`, `AnalysisRegistry`, `AnalysisResult`, `AnalysisSettings`, `Thresholds` + `g_thresholds`, 4 inline rule classes, damper-velocity detection (`evaluateDamperCorner`, `hasDamperIssue`), `CauseEntry`/`Recommendation` (disabled pipeline) |
 | `analyze_motec_setup.cpp` | LD/LDX parsing (`parseMotecLd`), `buildDataProviderFromLap`, `evaluateLapWithRules`, `mapAnalysisResultToReportSection`, `saveSymptomWeights`/`loadSymptomWeights`. File-import path still uses flat alias maps (not migrated — no silent-gap risk, see plan §11 Q6) |
 | `RuleConfig.h/.cpp` | Singleton: symptom registry + channel alias mappings + JSON parser. `buildDefaults()`, `resolveAlias()`, `loadChannelMappings()` |
-| `VehicleDb.h/.cpp` (+ `.generated.inc`) | **Layer 1** embedded AMS2 vehicle DB (525 cars). The source JSON (`data/reference/ams2_vehicles_db.json`) is compiled into a byte array by `scripts/generate_vehicle_db.py`; parsed once at first access via `JsonParser`. Typed API: `Ams2VehicleDb::instance()` → `find(name, car)` / `vehicleCount()` / `allNames()`, exposing mass/CG + per-wheel brake temp ranges + engine temps. No external file read at runtime |
+| `VehicleDb.h/.cpp` (+ `VehicleDbRow.h`, `VehicleDbBuckets.h`, 4× `VehicleDbData_*.cpp`) | **Layer 1** embedded AMS2 vehicle DB (507 cars). Plain C++ aggregate rows — one aligned line per car, split by letter range. Source JSON (`data/reference/ams2_vehicles_db.json`) is converted to `.cpp` tables by `scripts/json_to_vehicle_db.py`; no runtime file I/O or JSON parsing. Typed API: `Ams2VehicleDb::instance()` → `find(name, car)` / `vehicleCount()` / `allNames()`, exposing mass/CG + per-wheel brake temp ranges + engine temps |
 | `LapReportGenerator.h/.cpp` | Lap selection/averaging, report section generation (`generate*`), `ReportResult` |
 | `MotecToCSV.h/.cpp` | Binary LD/LDX decoder (`DecodeMotecLd`), Bresenham resampling, beacon markers, session metadata |
 | `Ams2LiveCapture.h/.cpp` | AMS2 shared-memory: binary parse + data-quality guards only; raw dict → table feed (`FeedLapFromTable`). `<Sim>GetChannelTableWarning()` surfaces unresolved mapping rows at startup. Tyre-temp L/R swap stays in C++ (non-linear, by design) |
@@ -157,7 +157,7 @@ Inline in the core analyzer header (previously `RecommendationEngine.h/.cpp`, no
 ## 6. Key Design Constraints
 
 - **Simulator-agnostic**: rules use semantic aliases via `DataProvider`, never raw channel names. New simulators require only a new mapping profile in `mapping.json`.
-- **Vehicle DB is AMS2-only** (`Ams2VehicleDb`): the embedded Layer 1 reference data covers Assetto Corsa Mod 2 vehicles exclusively (525 cars). AC EVO / PMR have no equivalent table — code must guard with `has*` flags or skip vehicle-specific logic for those profiles.
+- **Vehicle DB is AMS2-only** (`Ams2VehicleDb`): the embedded Layer 1 reference data covers Assetto Corsa Mod 2 vehicles exclusively. AC EVO / PMR have no equivalent table — code must guard with `has*` flags or skip vehicle-specific logic for those profiles.
 - **Data-driven rules**: symptoms/aliases/weights come from `RuleConfig` (code defaults + optional JSON). No recompile to add a symptom.
 - **Exe-relative paths**: all file I/O anchored to the executable directory (`AppDirPath()`), never absolute.
 - **GDI+ rendering**: all charts are custom GDI+ in PaintBox. No TChart components.

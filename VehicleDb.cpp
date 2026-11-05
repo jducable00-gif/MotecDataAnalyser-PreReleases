@@ -1,30 +1,24 @@
 //---------------------------------------------------------------------------
 // VehicleDb.cpp -- Base de vehicules AMS2 integree dans le binaire (Layer 1).
 //
-// Les octets du JSON vivent dans VehicleDb.generated.inc, genere par :
-//     python scripts/generate_vehicle_db.py
-// Ce fichier ne fait que parser ces octets une seule fois (JsonParser de
-// RuleConfig.h) et exposer les donnees via l'API typree de VehicleDb.h.
+// Les donnees ne sont plus un JSON embarque : elles vivent dans des tableaux C++
+// lisibles, un par fichier (VehicleDbData_A_F/_F_M/_M_S/_S_V.cpp), genere par :
+//     python scripts/json_to_vehicle_db.py   (a partir de data/reference/ams2_vehicles_db.json)
+// Ce fichier ne fait que parcourir le manifeste VehicleDbBuckets.h et exposer les
+// donnees via l'API typree de VehicleDb.h. Plus aucun parse au demarrage : la base
+// est pre-construite dans le binaire, ce qui rend chaque voiture editable a la main.
 //---------------------------------------------------------------------------
 
 #include "VehicleDb.h"
-#include "RuleConfig.h"      // JsonValue, JsonParser
 
 #include <algorithm>         // std::sort
 #include <cctype>            // tolower (recherche insensible a la casse)
 
-// Octets du JSON embarque : genere par scripts/generate_vehicle_db.py.
-#include "VehicleDb.generated.inc"   // kAms2VehiclesJson[] (taille = sizeof)
+// Manifeste des tableaux de donnees : declare les buckets et fournit kAms2Buckets[]
+// (table agregate, linkage interne -> n'inclure ce header que dans CE fichier).
+#include "VehicleDbBuckets.h"   // Ams2BucketRef, kAms2Buckets[], VehicleDbRow
 
 namespace {
-
-double vNum(const JsonValue* v) {
-    return (v && v->type == JsonValue::Number) ? v->number : 0.0;
-}
-
-bool isNum(const JsonValue* v) {
-    return (v && v->type == JsonValue::Number);
-}
 
 std::string toLowerCopy(std::string s) {
     for (std::size_t i = 0; i < s.size(); ++i)
@@ -43,100 +37,52 @@ std::string normalizeName(std::string s) {
     }
     return s;
 }
-// CGRightRange / CGRearRange : deux formes dans le DB.
-//  - scalaire            -> valeur fixe (hasFixedValue)
-//  - objet {min,step,max}-> plage reglable ; la position courante vient du champ
-//    frere <settingKey> (= min + step * setting). La presence de l'objet est en
-//    elle-meme une information : le CG peut etre deplace dans les reglages.
-void parseCgRange(const JsonValue* ch, const char* rangeKey,
-                  const char* settingKey, CgRangeData& out) {
-    if (!ch || ch->type != JsonValue::Object) return;
-    const JsonValue* v = ch->find(rangeKey);
-    if (isNum(v)) {                                   // forme scalaire : CG fixe
-        out.present       = true;
-        out.hasFixedValue = true;
-        out.fixedValueM   = v->number;
-        return;
-    }
-    if (!v || v->type != JsonValue::Object) return;   // cle absente ou forme inconnue
-    const JsonValue* mn  = v->find("min");
-    if (isNum(mn)) {                                  // forme objet : plage reglable
-        out.present       = true;
-        out.minM          = mn->number;
-        const JsonValue* stp = v->find("step");
-        if (isNum(stp))  out.stepM         = stp->number;
-        const JsonValue* mx  = v->find("max");
-        if (isNum(mx))   out.maxPositions  = mx->number;
-    } else {                                          // objet sans min : inutilisable
-        return;
-    }
-    const JsonValue* s = ch->find(settingKey);
-    if (isNum(s)) {                                   // position courante selectionnee
-        out.hasSetting   = true;
-        out.settingIndex = s->number;
-    }
-}
 
-void parseWheelBrake(const JsonValue* obj, WheelBrakeData& out) {
-    if (!obj || obj->type != JsonValue::Object) return;
-    const JsonValue* range = obj->find("OptimumTempRange");
-    if (range && range->type == JsonValue::Array && range->array.size() >= 2) {
-        out.optTempMinC = vNum(&range->array[0]);
-        out.optTempMaxC = vNum(&range->array[1]);
-    }
-    const JsonValue* fB = obj->find("FadeTorqueLossBelow");
-    if (isNum(fB)) { out.fadeTorqueLossBelow = fB->number; }
-    const JsonValue* fA = obj->find("FadeTorqueLossAbove");
-    if (isNum(fA)) { out.fadeTorqueLossAbove = fA->number; }
-    const JsonValue* rB = obj->find("FadeRangeBelow");
-    const JsonValue* rA = obj->find("FadeRangeAbove");
-    if (isNum(rB) && isNum(rA)) {
-        out.hasFadeTemps = true;
-        out.fadeRangeBelowC = rB->number;
-        out.fadeRangeAboveC = rA->number;
-    }
-    out.present = true;
-}
+// Convertit une ligne brute (VehicleDbRow, agregat positionnel) en VehicleInfo typé.
+// Le générateur garantit que chaque ligne émise est complète : chassis présent avec
+// masse + CG valides et un jeu de freins plausible (les voitures sans données sont
+// exclues à l'émission). Les champs optionnels absents portent kVehicleNoValue (-1.f)
+// -> leurs drapeaux has* restent false, ce qui préserve la sémantique "pas de trou".
+void rowToCar(const VehicleDbRow& r, VehicleInfo& car) {
+    // Le .cpp pad le nom à droite (espaces) pour aligner les colonnes : on retire cette marge.
+    std::string name(r.name);
+    while (!name.empty() && (name.back() == ' ' || name.back() == '\t'))
+        name.pop_back();
 
-void parseVehicle(const std::string& name, const JsonValue* entry, VehicleInfo& car) {
-    if (!entry || entry->type != JsonValue::Object) return;
-    car.name = name;
+    car.name  = name;
+    car.alias  = r.alias ? std::string(r.alias) : std::string();        // Alias_name du JSON
+    car.valid = true;   // toute ligne émise est valide par construction du générateur
 
-    const JsonValue* physics = entry->find("physics");
-    if (physics && physics->type == JsonValue::Object) {
-        // --- chassis -------------------------------------------------
-        const JsonValue* ch = physics->find("chassis");
-        if (ch && ch->type == JsonValue::Object) {
-            car.chassis.present = true;
-            const JsonValue* m  = ch->find("Mass");         if (isNum(m))  car.chassis.massKg      = m->number;
-            const JsonValue* cg = ch->find("CGHeight");     if (isNum(cg)) { car.chassis.cgHeightM    = cg->number; car.chassis.hasCgHeight   = true; }
+    ChassisPhysics& ch = car.chassis;
+    ch.present     = true;
+    ch.massKg      = r.massKg;        ch.hasMass     = true;
+    if (r.cgHeightM != kVehicleNoValue) { ch.cgHeightM   = r.cgHeightM;  ch.hasCgHeight = true; }
 
-            parseCgRange(ch, "CGRightRange", "CGRightSetting", car.chassis.cgRight);
-            parseCgRange(ch, "CGRearRange",  "CGRearSetting",  car.chassis.cgRear);
+    // CG latéral/longitudinal : le DB ne porte que la forme scalaire fixe (pas de plage).
+    CgRangeData& cgRt = ch.cgRight;
+    if (r.cgRightM != kVehicleNoValue) { cgRt.present       = true; cgRt.hasFixedValue = true; cgRt.fixedValueM  = r.cgRightM; }
+    CgRangeData& cgRe = ch.cgRear;
+    if (r.cgRearM  != kVehicleNoValue) { cgRe.present       = true; cgRe.hasFixedValue = true; cgRe.fixedValueM  = r.cgRearM; }
 
-
-            const char* wheelKeys[4] = {"FL", "FR", "RL", "RR"};
-            const JsonValue* brakes = ch->find("brakes");
-            if (brakes && brakes->type == JsonValue::Object) {
-                for (int w = 0; w < 4; ++w)
-                    parseWheelBrake(brakes->find(wheelKeys[w]), car.chassis.brakes[w]);
-            }
-        }
-
-        // --- engine --------------------------------------------------
-        const JsonValue* eng = physics->find("engine");
-        if (eng && eng->type == JsonValue::Object) {
-            car.engine.present = true;
-            const JsonValue* oo = eng->find("OptimumOilTemp");   if (isNum(oo)) { car.engine.optOilTempC    = oo->number; car.engine.hasOptOilTemp  =true; }
-            const JsonValue* ow = eng->find("OilWarningTemp");   if (isNum(ow)) { car.engine.oilWarningTempC= ow->number; car.engine.hasOilWarningTemp=true;}
-            const JsonValue* ww = eng->find("WaterWarningTemp"); if (isNum(ww)) { car.engine.waterWarningTempC=ww->number;car.engine.hasWaterWarningTemp=true;}
-        }
+    // Jeu de freins commun aux 4 roues : le générateur a validé optMin/optMax/fadeLow/
+    // fadeHigh (bande plausible) pour chaque voiture émise -> present + hasFadeTemps true.
+    for (int w = Ams2VehicleDb::kWheelFl; w <= Ams2VehicleDb::kWheelRr; ++w) {
+        WheelBrakeData& wb = ch.brakes[w];
+        wb.present             = true;
+        wb.optTempMinC         = r.brake.optMinC;
+        wb.optTempMaxC         = r.brake.optMaxC;
+        wb.fadeTorqueLossBelow  = r.brake.fadeLossBelow;   // -1.f si absent (aucun consommateur actif)
+        wb.fadeTorqueLossAbove  = r.brake.fadeLossAbove;
+        wb.hasFadeTemps       = true;                      // FadeRange présent pour toute voiture émise
+        wb.fadeRangeBelowC    = r.brake.fadeLowC;
+        wb.fadeRangeAboveC    = r.brake.fadeHighC;
     }
 
-    // Une entree est "valide" si la section chassis existe (le schema du DB est
-    // uniforme : Mass y figure toujours). Les champs manquants restent signales
-    // par leurs drapeaux has* individuels.
-    car.valid = car.chassis.present;
+    EnginePhysics& e = car.engine;
+    if (r.oilOptC    != kVehicleNoValue) { e.optOilTempC      = r.oilOptC;     e.hasOptOilTemp     = true; }
+    if (r.oilWarnC   != kVehicleNoValue) { e.oilWarningTempC  = r.oilWarnC;    e.hasOilWarningTemp = true; }
+    if (r.waterWarnC != kVehicleNoValue) { e.waterWarningTempC= r.waterWarnC;  e.hasWaterWarningTemp=true; }
+    e.present = e.hasOptOilTemp || e.hasOilWarningTemp || e.hasWaterWarningTemp;
 }
 
 // Comparateur par nom (minuscules) pour le tri deterministe de m_vehicles.
@@ -188,18 +134,15 @@ bool Ams2VehicleDb::find(const std::string& name, VehicleInfo& car) const {
 }
 
 Ams2VehicleDb::Ams2VehicleDb() : m_valid(false) {
-    std::string text(reinterpret_cast<const char*>(kAms2VehiclesJson), sizeof(kAms2VehiclesJson));
-    JsonValue root;
-    std::string error;
-    if (!JsonParser::parse(text, root, error)) return;   // JSON corrompu : DB invalide
+    // Parcours du manifeste de buckets : chaque bucket est un tableau C++ pre-construit.
+    for (std::size_t b = 0; b < sizeof(kAms2Buckets)/sizeof(Ams2BucketRef); ++b) {
+        const Ams2BucketRef& ref = kAms2Buckets[b];
+        for (std::size_t i = 0; i < ref.count; ++i) {
+            VehicleInfo car;
+            rowToCar(ref.rows[i], car);
 
-    for (std::size_t i = 0; i < root.object.size(); ++i) {
-        const std::string& key = root.object[i].first;
-        VehicleInfo car;
-        parseVehicle(key, &root.object[i].second, car);
-        if (!car.valid) continue;                        // entree incomplete : ignoree
-
-        m_vehicles.push_back(car);                       // copie explicite (style projet)
+            m_vehicles.push_back(car);                       // copie explicite (style projet)
+        }
     }
 
     std::sort(m_vehicles.begin(), m_vehicles.end(), NameLess());

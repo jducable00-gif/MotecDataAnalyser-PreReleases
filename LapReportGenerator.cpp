@@ -1013,7 +1013,15 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
             return "N/A";
         return name.c_str();
     };
-    summary << (fr ? "Voiture : " : "Car: ") << displayName(lap.vehicleName) << "\n";
+    // Car name with alias lookup (AMS2 DB): show "Alias*" if found, else raw name.
+    {
+        std::string carDisp = lap.vehicleName;
+        VehicleInfo dbLookup;
+        if (!carDisp.empty() && carDisp != "Unknown vehicle"
+            && Ams2VehicleDb::instance().find(carDisp, dbLookup) && !dbLookup.alias.empty())
+            carDisp = dbLookup.alias + "*";
+        summary << (fr ? "Voiture : " : "Car: ") << displayName(carDisp) << "\n";
+    }
 	summary << (fr ? "Circuit : " : "Track: ") << displayName(lap.trackName) << "\n\n";
 
     // --- Lap selection breakdown ---
