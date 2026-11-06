@@ -291,29 +291,69 @@ bool fetchLatestReleaseSync(const std::string& owner, const std::string& repo,
 // Statiques de portée fichier -> vivent toute la durée du processus ; un thread
 // détaché ne peut donc jamais référencer de mémoire libérée (aucun objet VCL).
 namespace {
-    std::mutex   g_releaseMutex;
-    AppRelease   g_latest{};
-    bool         g_hasPending = false;
+    std::mutex          g_releaseMutex;      // protège uniquement les variables ci-dessous (jamais de VCL)
+    AppRelease          g_best{};            // meilleur release de la dernière vague (merge multi-repos)
+    bool                g_hasPending = false;// true si un résultat attend la form (takePendingRelease)
+
+    // --- Etat de la "vague" en cours : 1 appel fetchLatestReleasesAsync() = 1 vague, 1 slot par repo.
+    std::atomic<int>        g_waveSeq{0};      // incrémenté à chaque nouvelle vague ; les workers d'une vague remplacée s'ignorent
+    std::vector<AppRelease> g_waveResults;     // sous mutex, indexé sur l'ordre de repos[] au lancement (index = priorité)
+    std::atomic<int>        g_workersLeft{0};  // décompte atomique : un repo en échec ne bloque pas les autres
+
+    int startWave(const int repoCount) {
+        const int seq = g_waveSeq.fetch_add(1) + 1;   // séquence d'abord (sans lock), puis état sous mutex -> aucun worker n'existe encore, pas de course possible sur la création
+        std::lock_guard<std::mutex> lk(g_releaseMutex);   // remplace proprement une vague précédente non récupérée / en cours
+        g_hasPending = false;
+        g_best = AppRelease{};
+        g_waveResults.assign(repoCount, AppRelease{});
+        return seq;
+    }
+
+    void mergeWaveResults() {
+        std::lock_guard<std::mutex> lk(g_releaseMutex);   // appelé par le dernier worker terminé (décompte atomique) -> fusion sous mutex
+        AppRelease best{}; bool haveInstallable = false;
+        for (const auto& r : g_waveResults) {             // la release INSTALLABLE la plus récente gagne ; à version égale, l'ordre des feeds tranchera (pre-release d'abord pour un testeur)
+            if (!r.empty() && isUpdateAvailable(r)) {
+                if (!haveInstallable || compareVersions(best.tagName, r.tagName) < 0) { best = r; haveInstallable = true; }
+            }
+        }
+        if (!haveInstallable)                             // aucun installable -> on garde quand même la première trouvée (la form affichera "à jour")
+            for (const auto& r : g_waveResults) { if (!r.empty()) { best = r; break; } }
+        g_best = std::move(best);
+        g_hasPending = !g_best.empty();   // vague totalement en échec -> pas de pending (comportement identique à l'ancien mono-repo)
+    }
 }
 
-void fetchLatestReleaseAsync(const std::string& owner, const std::string& repo) {
-    try {
-        std::thread([owner, repo]() mutable {
-            AppRelease rel;
-            if (fetchLatestReleaseSync(owner, repo, rel)) {
-                std::lock_guard<std::mutex> lk(g_releaseMutex);
-                g_latest = std::move(rel);
-                g_hasPending = true;   // la form viendra le récupérer via takePendingRelease()
-            }
-        }).detach();
-    } catch (...) { /* thread creation failed : on reste sur la version locale */ }
+void fetchLatestReleasesAsync(const std::string& owner, const std::vector<std::string>& repos) {
+    if (owner.empty() || repos.empty()) return;
+
+    // Un thread détaché par dépôt : ne touche QUE l'état global du module ci-dessus. Si la form est détruite pendant le fetch
+    // (ex: fermeture de l'app), aucun pointeur vers un objet VCL n'est référencé -> pas d'UAF, pas de crash au shutdown.
+    const int seq = startWave(static_cast<int>(repos.size()));
+    g_workersLeft.store(static_cast<int>(repos.size()));   // AVANT tout spawn : les workers ne peuvent pas décompter avant ce store
+
+    for (int i = 0; i < static_cast<int>(repos.size()); ++i) {
+        const std::string repo = repos[i];                 // copie par valeur dans la lambda -> safe sur thread détaché
+        try {
+            std::thread([owner, repo, i, seq]() mutable {
+                AppRelease rel;
+                const bool ok = fetchLatestReleaseSync(owner, repo, rel);   // échec réseau / pas de release : slot vide -> ne bloque personne
+
+                if (ok && seq == g_waveSeq.load())    // vague remplacée entre-temps ? résultat obsolète, on l'abandonne sans toucher à la nouvelle
+                    { std::lock_guard<std::mutex> lk(g_releaseMutex); g_waveResults[i] = std::move(rel); }
+
+                if (g_workersLeft.fetch_sub(1) > 1) return;   // décompte TOUJOURS exécuté (même worker obsolète/échec), sinon la fusion n'arriverait jamais
+                mergeWaveResults();                            // "moi" suis le dernier : publication de g_best/g_hasPending sous mutex
+            }).detach();
+        } catch (...) { /* thread creation failed (ressources) : ce repo est ignoré, la vague continue sans lui */ }
+    }
 }
 
 bool takePendingRelease(AppRelease& out) {
     std::lock_guard<std::mutex> lk(g_releaseMutex);
-    if (!g_hasPending) return false;
-    g_hasPending = false;
-    out = g_latest;   // copie : petit struct de 4 strings, une fois par session
+    if (!g_hasPending) return false;   // rien de nouveau depuis le dernier appel (ou fetch en cours / échec réseau)
+    g_hasPending = false;              // on consomme : la form re-pollera au prochain tick du timer
+    out = g_best;                      // copie : petit struct de strings, une fois par vague -> coût négligeable sur le thread UI
     return true;
 }
 

@@ -34,6 +34,8 @@ __published:
     TEdit *EditMinValidLapTime;
     TLabel *LblMaxValidLapTime;
     TEdit *EditMaxValidLapTime;
+    TCheckBox *ChkPreReleaseUpdates;   // [General] feed pre-release de self-update
+    TLabel *LblPrereleaseHint;         // [General] aide sous la case pre-release
 
     // Tyre Tab
     TGroupBox *GroupTyrePressure;

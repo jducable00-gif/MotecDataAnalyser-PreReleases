@@ -85,6 +85,30 @@ object FormMotecSettings: TFormMotecSettings
           Text = '1.3'
         end
       end
+       object GroupUpdates: TGroupBox
+         Left = 21
+         Top = 305
+         Width = 552
+         Height = 84
+         Caption = 'Update Feed'
+         TabOrder = 2
+         object ChkPreReleaseUpdates: TCheckBox
+           Left = 16
+           Top = 30
+           Width = 400
+           Height = 17
+           Caption = 'Receive pre-releases (testers)'
+           TabOrder = 0
+         end
+         object LblPrereleaseHint: TLabel
+           Left = 16
+           Top = 54
+           Width = 520
+           Height = 15
+           Caption = 'The update feed switches to the Pre-Releases repository.'
+         end
+       end
+
     end
     object TabTyre: TTabSheet
       Caption = 'Tyre'

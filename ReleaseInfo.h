@@ -36,6 +36,7 @@ typedef LPVOID HINTERNET;   // identique au typedef du SDK (wininet.h) — redef
 #include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #pragma comment(lib, "winhttp")   // link winhttp.lib (pas besoin du header)
 
@@ -127,12 +128,16 @@ std::string formatReleaseDate(const std::string& isoUtc, bool french);
 bool fetchLatestReleaseSync(const std::string& owner, const std::string& repo,
                             AppRelease& out, int timeoutMs = 8000);
 
-// Version asynchrone : lance un thread détaché qui écrit dans l'état global du
-// module (jamais de VCL, jamais d'objet form) -> safe même si la form est détruite
-// pendant le fetch. La form récupère les données via takePendingRelease().
-void fetchLatestReleaseAsync(const std::string& owner, const std::string& repo);
+// Version asynchrone multi-repos (même owner) : un thread détaché par dépôt, en
+// parallèle ; quand TOUS ont terminé, on garde la meilleure version installable
+// (tag strictement supérieur à kAppVersion + asset .exe présent). Un repo sans
+// release ne bloque pas les autres. Exemple d'usage : testeur pre-release ->
+// {kPreReleaseRepo, kStableRepo} pour voir aussi les versions stables ; user
+// stable -> {kStableRepo}. Ecrit dans l'état global du module (jamais de VCL) ->
+// safe même si la form est détruite pendant le fetch. La form récupère via takePendingRelease().
+void fetchLatestReleasesAsync(const std::string& owner, const std::vector<std::string>& repos);
 
-// Récupération du dernier release produit par le worker depuis l'appel précédent :
+// Récupération du dernier release produit par les workers depuis l'appel précédent :
 // true + out rempli si une nouvelle donnée est disponible (sinon false).
 bool takePendingRelease(AppRelease& out);
 

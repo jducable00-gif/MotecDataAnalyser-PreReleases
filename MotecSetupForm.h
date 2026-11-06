@@ -36,6 +36,14 @@
 // Active live-capture backend.
 enum LiveMode { LIVE_AMS2 = 0, LIVE_EVO = 1, LIVE_PMR = 2 };
 
+// [ReleaseInfo] Feeds de self-update : stable par defaut, pre-release en option.
+namespace ReleaseFeed
+{
+	const char kOwner[]          = "jducable00-gif";
+	const char kStableRepo[]     = "MotecDataAnalyser-Releases";
+	const char kPreReleaseRepo[] = "MotecDataAnalyser-PreReleases";
+}
+
 class TFormMotecSetup : public TForm
 {
 __published:
@@ -181,6 +189,7 @@ public:
 	std::atomic<long long> m_downloadTotal{-1};
 
     void __fastcall loadReleaseInfoCache();   // [ReleaseInfo] INI section -> m_latestRelease
+    void __fastcall applyReleaseFeedChange(bool preReleaseNow);   // [ReleaseInfo] re-fetch apres changement de feed dans les parametres
     void __fastcall saveReleaseInfoCache(const AppRelease& rel);
     String __fastcall buildAboutText() const;  // FR/EN formatted version + notes (UI thread only)
     void __fastcall refreshAboutFormIfOpen();  // re-render memo if the About dialog is visible

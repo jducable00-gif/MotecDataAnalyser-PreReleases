@@ -481,6 +481,26 @@ bool ReadAutoDetectTrackSetting()
 	}
 }
 
+int ReadPreReleaseUpdatesSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		return settings->ReadInteger("General", "PreReleaseUpdates", 0);   // default : feed stable (0)
+	} __finally {
+		delete settings;
+	}
+}
+
+void SavePreReleaseUpdatesSetting(bool pre)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("General", "PreReleaseUpdates", pre ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
+
 bool ReadLiveCaptureSetting()
 {
 	TIniFile* settings = new TIniFile(SettingsFilePath());
@@ -1068,7 +1088,15 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// WinHTTP délègue les credentials Windows de l'utilisateur connecté.
 	// Le worker écrit dans l'état global de ReleaseInfo ; ReleasePollTimer (1 s)
 	// récupère via takePendingRelease() et met à jour UI + cache INI.
-	fetchLatestReleaseAsync("jducable00-gif", "MotecDataAnalyser-Releases");
+	// [ReleaseInfo] Feed de self-update. Testeur pre-release -> les DEUX feeds (pre-release d'abord pour la priorite du merge, puis stable) ; user stable -> un seul fetch sur le repo public.
+	std::vector<std::string> repos;
+	if (!ReadPreReleaseUpdatesSetting()) {
+		repos.push_back(ReleaseFeed::kStableRepo);
+	} else {
+		repos.push_back(ReleaseFeed::kPreReleaseRepo);   // priorite du merge : les pre-releases gagnent si installables
+		repos.push_back(ReleaseFeed::kStableRepo);       // ... mais on voit aussi les versions stables (union des feeds)
+	}
+	fetchLatestReleasesAsync(ReleaseFeed::kOwner, repos);   // un thread par repo ; takePendingRelease() ne rend qu'UN resultat merge par vague
 
 	if (ReleasePollTimer != NULL) {
 		ReleasePollTimer->Interval = 1000;   // poll de l'état global worker -> UI
@@ -1161,8 +1189,11 @@ void __fastcall TFormMotecSetup::TranslateUI()
 void __fastcall TFormMotecSetup::ButtonSettingsClick(TObject *Sender)
 {
 	TFormMotecSettings *settingsForm = new TFormMotecSettings(this);
+	const bool preBefore = ReadPreReleaseUpdatesSetting();   // [ReleaseInfo] etat du feed avant la boite de dialogue
 	try {
 		if (settingsForm->ShowModal() == mrOk) {
+		const bool preAfter = ReadPreReleaseUpdatesSetting();   // [ReleaseInfo] le feed a-t-il change ?
+		if (preAfter != preBefore) applyReleaseFeedChange(preAfter);
 			// Thresholds are already updated in g_thresholds and the .ini file 
 			// by ButtonSaveClick in MotecSettingsForm.cpp
 		}
@@ -3942,6 +3973,21 @@ void __fastcall TFormMotecSetup::saveReleaseInfoCache(const AppRelease& rel)
 	}
 }
 
+
+void __fastcall TFormMotecSetup::applyReleaseFeedChange(bool preReleaseNow)
+{
+	// [ReleaseInfo] Le feed a change dans les parametres : vider le cache et re-interroger l API du bon repo.
+	m_latestRelease = AppRelease{};
+	m_hasCachedRelease = false;
+	std::vector<std::string> repos;
+	if (!preReleaseNow) {
+		repos.push_back(ReleaseFeed::kStableRepo);
+	} else {
+		repos.push_back(ReleaseFeed::kPreReleaseRepo);   // priorite du merge : pre-release d'abord, stable ensuite (union des feeds)
+		repos.push_back(ReleaseFeed::kStableRepo);
+	}
+	fetchLatestReleasesAsync(ReleaseFeed::kOwner, repos);
+}
 
 // [ReleaseInfo] Popup au demarrage : propose la mise a jour si le cache INI contient deja une version plus recente que l exe courante.
 void __fastcall TFormMotecSetup::promptForAvailableUpdate()

@@ -7,15 +7,44 @@ How to cut a new version of MotecDataAnalyser so that **installed apps detect it
 - **Private repo** `jducable00-gif/MotecDataAnalyser` — all source. Branches:
   - `advanced`: development branch (work happens here).
   - `release`: contains **only two files**, both with plain-ASCII names (`MotecDataAnalyser.exe`, `MotecDataAnalyser.mapping.json`) at the tip of a synthetic commit whose parent is the current `advanced` tip. No source, ever. The app loads its mapping from exe-relative `appDir + "MotecDataAnalyser.mapping.json"` — any non-ASCII/mojibake tree-entry name silently breaks channel mapping on fresh installs (this happened in v5.6.8's first dist commit).
-- **Public repo** `jducable00-gif/MotecDataAnalyser-Releases` — distribution/update feed only:
+- **Public repo** `jducable00-gif/MotecDataAnalyser-Releases` — distribution/update feed only (stable channel):
   - branch `main`: same two files as private `release`.
   - GitHub Releases (tagged `vX.Y.Z`) with the exe attached as asset named exactly `MotecDataAnalyser.exe`.
+- **Public pre-release feed** `jducable00-gif/MotecDataAnalyser-PreReleases` — opt-in testers channel. Same shape as the stable public repo, but only apps that have `[General] PreReleaseUpdates=1` in their INI (Settings → "Receive pre-releases") ever query it. See [Pre-release channel](#pre-release-channel--separate-public-feed) below.
 - The app ([ReleaseInfo.cpp](../ReleaseInfo.cpp)) does an **unauthenticated** GET on
   `https://api.github.com/repos/jducable00-gif/MotecDataAnalyser-Releases/releases/latest`,
-  compares tags, and downloads the first `.exe` asset. Since V5.6.9 it ALSO downloads mapping.json: [ReleaseInfo.cpp](../ReleaseInfo.cpp) derives its URL from the release tag as `https://raw.githubusercontent.com/jducable00-gif/MotecDataAnalyser-Releases/{tag}/MotecDataAnalyser.mapping.json`, so **the dist tree must always contain both files with clean ASCII names** — a missing/mojibake'd json name silently 404s the mapping download (exe update itself is non-blocking on that failure, but users keep stale channel mappings). Private repos return flat 404s to unauthenticated calls — that is why this public repo exists. **Never point the app back at the private repo.**
+  compares tags, and downloads the first `.exe` asset. Stable users query exactly that one repo; testers (`[General] PreReleaseUpdates=1`) get **both** feeds in parallel (one detached thread per repo) — see [Pre-release channel](#pre-release-channel--separate-public-feed). Since V5.6.9 it ALSO downloads mapping.json: [ReleaseInfo.cpp](../ReleaseInfo.cpp) derives its URL from the release tag as `https://raw.githubusercontent.com/jducable00-gif/MotecDataAnalyser-Releases/{tag}/MotecDataAnalyser.mapping.json`, so **the dist tree must always contain both files with clean ASCII names** — a missing/mojibake'd json name silently 404s the mapping download (exe update itself is non-blocking on that failure, but users keep stale channel mappings). Private repos return flat 404s to unauthenticated calls — that is why this public repo exists. **Never point the app back at the private repo.**
 
 Version format: `VX.Y.Z`. The in-app comparison treats a missing segment as 0 (`V5.6` < `v5.6.1`).
 The version literal lives in one place only: [`kAppVersion`](../ReleaseInfo.h) (e.g. `"V5.6.2"`).
+
+## Pre-release channel — separate public feed
+
+A second **public** repository, `jducable00-gif/MotecDataAnalyser-PreReleases`, is a standalone self-update feed for testers. It exists so you can ship and test versions without touching the stable release path (installed apps on the default/stable feed never see pre-releases).
+
+How it works:
+- The app's update check is driven by `[General] PreReleaseUpdates` in `MotecDataAnalyser.ini`:
+  - `0` / absent → **one** fetch, stable feed only (`.../repos/jducable00-gif/MotecDataAnalyser-Releases/releases/latest`) — the default. Stable users never pay for a second request.
+  - `1` (testers) → **both** feeds in parallel: one detached thread per repo (`fetchLatestReleasesAsync`, pre-release first). When all workers finish, results are merged and exactly ONE release is surfaced to the form: the **newest installable** across both feeds; on an exact version tie the pre-release feed wins (so a tester stays on their preview build until something strictly newer ships anywhere).
+- The toggle is a checkbox in **Settings** ("Recevoir aussi les versions pré-release" / "Also receive pre-releases"). Flipping it and clicking OK re-fetches immediately from the newly selected repo set (`applyReleaseFeedChange`); no restart needed.
+
+Tagging rule for pre-releases:
+- The comparator ([compareVersions](../ReleaseInfo.cpp)) is **numeric-only**: suffixes like `-pre`, `rc1` are ignored, so `v5.7-pre == v5.7`. Tag a preview with the numeric part of what it previews (e.g. `v5.7-pre` for an upcoming 5.7).
+- A pre-release is only "installable" while its number beats the installed app's version; once you ship a strictly higher stable, testers move to that stable automatically — no manual un-stick needed. Keep tagging newer previews as long as you want testers ahead of stable.
+- Because `/releases/latest` excludes releases marked *pre-release*, channel separation is done by **repo**, not by GitHub's prerelease flag: publish normal (non-prerelease) Releases on `MotecDataAnalyser-PreReleases`.
+
+Publishing a pre-release = the stable procedure with two substitutions:
+1. Add/verify a remote for the feed repo if you don't have one:
+   ```powershell
+   git remote add dist-pre https://github.com/jducable00-gif/MotecDataAnalyser-PreReleases.git
+   ```
+2. Run steps 3–5 above, but push the two-file commit to `dist-pre` (not `dist`) and create/verify the GitHub Release + exe asset on **MotecDataAnalyser-PreReleases** (replace every `jducable00-gif/MotecDataAnalyser-Releases` in steps 4a–5 with `jducable00-gif/MotecDataAnalyser-PreReleases`).
+   - Same two-file dist tree: plain-ASCII `MotecDataAnalyser.exe` + `MotecDataAnalyser.mapping.json`. The mapping download URL is derived from the tag as `https://raw.githubusercontent.com/jducable00-gif/MotecDataAnalyser-PreReleases/{tag}/MotecDataAnalyser.mapping.json`, so both files must be present with clean names.
+   - Bump `kAppVersion` (step 1) before building, exactly like a stable release — the in-app "newer than installed" comparison is identical on either feed.
+
+Notes:
+- The pre-release repo needs no source and never receives it; keep it to dist content + Releases only, same as the stable public repo.
+- An app left on the default (stable) feed will **never** detect a release that exists only in `MotecDataAnalyser-PreReleases` — testers are the ones who see both feeds (union), not the other way around. To promote a pre-release to everyone, publish it again through the normal stable procedure against `MotecDataAnalyser-Releases`.
 
 ## Prerequisites / environment notes
 

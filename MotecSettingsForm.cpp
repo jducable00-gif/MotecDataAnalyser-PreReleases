@@ -23,6 +23,9 @@ extern bool   ReadWebServerEnabled();
 extern void   SaveWebServerEnabled(bool enabled);
 extern int    ReadWebServerPort();
 extern void   SaveWebServerPort(int port);
+extern int    ReadPreReleaseUpdatesSetting();
+extern void   SavePreReleaseUpdatesSetting(bool pre);
+
 
 // Access to global thresholds and helper functions from other units
 extern Thresholds g_thresholds;
@@ -88,6 +91,8 @@ void TFormMotecSettings::LoadFromThresholds()
     EditMinDamperSamples->Text = IntToStr((int)g_thresholds.minDamperSamples);
     EditMinValidLapTime->Text = FloatToStr(g_thresholds.minValidLapTimeMultiplier);
     EditMaxValidLapTime->Text = FloatToStr(g_thresholds.maxValidLapTimeMultiplier);
+
+    ChkPreReleaseUpdates->Checked = (ReadPreReleaseUpdatesSetting() != 0);   // [General] feed pre-release
 
     // Pressure (psi)
     EditPressLow->Text = FloatToStr(g_thresholds.pressureLowPsi);
@@ -287,6 +292,8 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
         // Live-apply: start/stop the server immediately without restarting.
         FormMotecSetup->ApplyWebServerSettings();
 
+        SavePreReleaseUpdatesSetting(ChkPreReleaseUpdates->Checked);   // [General] persiste le choix de feed (re-fetch cote form principale)
+
         ModalResult = mrOk;
     } catch (...) {
         // Error message already shown in SaveToThresholds
@@ -347,6 +354,8 @@ void TFormMotecSettings::TranslateUI()
     GroupLapValidity->Caption = isFr ? "Temps de tour valide" : "Valid Lap Time";
     LblMinValidLapTime->Caption = isFr ? "Temps min. tour valide (x meilleur):" : "Min Valid Lap Time (x best):";
     LblMaxValidLapTime->Caption = isFr ? "Temps max. tour valide (x meilleur):" : "Max Valid Lap Time (x best):";
+    ChkPreReleaseUpdates->Caption = isFr ? "Recevoir aussi les versions pré-release (testeurs)" : "Also receive pre-releases (testers)";
+    LblPrereleaseHint->Caption   = isFr ? "Le self-update regarde aussi le dépôt Pre-Releases ; la version installable la plus récente gagne." : "The update check also looks at the Pre-Releases repository; the newest installable version wins.";
 
     GroupTyrePressure->Caption = isFr ? "Pression (psi)" : "Pressure (psi)";
     LblPressLow->Caption = isFr ? "Minimum :" : "Low:";
