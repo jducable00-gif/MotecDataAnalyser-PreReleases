@@ -78,7 +78,7 @@ extern "C" {
 
 // Version affichée dans la barre de statut. Bumpée par scripts/release.ps1 lors
 // de chaque release (le script met aussi à jour ce fichier et le commit).
-static const char* kAppVersion = "V5.6.18";
+static const char* kAppVersion = "V5.6.19";
 
 // Diagnostic self-update : append-only log texte UTF-8 dans <dirExe>\MotecDataAnalyser.update.log.
 // Thread-safe (mutex interne) ; utilisé par downloadReleaseAsset + startSelfUpdate pour tracer
