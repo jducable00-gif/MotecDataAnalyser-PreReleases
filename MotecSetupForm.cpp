@@ -4186,8 +4186,9 @@ void __fastcall TFormMotecSetup::ButtonAboutClick(TObject *Sender)
 	TMemo* memo = new TMemo(dlg);
 	memo->Parent     = dlg;
 	memo->Align      = alClient;
-	memo->ScrollBars = ssBoth;
-	memo->WordWrap   = false;
+	// WordWrap : les notes de release contiennent des lignes longues (puces, URLs) — sans retour a la ligne automatique elles depasseraient le bord droit du dialog.
+	memo->ScrollBars = ssVertical;
+	memo->WordWrap   = true;
 	memo->Lines->Text = buildAboutText();
 	// Bouton "Mettre a jour" si une release avec asset est disponible.
 	if (!m_latestRelease.empty() && isUpdateAvailable(m_latestRelease)) {
