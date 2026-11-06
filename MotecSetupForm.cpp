@@ -3938,6 +3938,19 @@ void __fastcall TFormMotecSetup::UpdateSuspension(std::vector<LapStats>& laps)
 // écrit dans l'état global de ReleaseInfo.cpp ; takePendingRelease() fait la
 // passerelle (voir ReleasePollTimerTimer).
 // ---------------------------------------------------------------------------
+namespace {
+// Normalise les fins de ligne d'un corps de release notes vers CRLF : un cache INI
+// ancien peut contenir des \n seuls (API GitHub) et VCL ne coupe que sur CR+LF.
+std::string normalizeReleaseBodyLineEndings(const std::string& in) {
+	std::string out; out.reserve(in.size() + 16);
+	for (size_t i = 0; i < in.size(); ++i) {
+		if (in[i] == '\r') { out.push_back('\r'); if (i + 1 < in.size() && in[i+1] == '\n') ++i; }
+		else if (in[i] == '\n') out += "\r\n";
+		else out.push_back(in[i]);
+	}
+	return out;
+}
+} // namespace
 
 void __fastcall TFormMotecSetup::loadReleaseInfoCache()
 {
@@ -3946,7 +3959,9 @@ void __fastcall TFormMotecSetup::loadReleaseInfoCache()
 		m_latestRelease.tagName     = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Tag", ""));
 		m_latestRelease.htmlUrl     = WideStringToUtf8(settings->ReadString("ReleaseInfo", "HtmlUrl", ""));
 		m_latestRelease.publishedAt = WideStringToUtf8(settings->ReadString("ReleaseInfo", "PublishedAt", ""));
-		m_latestRelease.body        = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Body", ""));
+		// Normalise les fins de ligne (cache ancien : \n seuls) avant affichage TMemo.
+		const std::string cachedBody = normalizeReleaseBodyLineEndings(WideStringToUtf8(settings->ReadString("ReleaseInfo", "Body", "")));
+		m_latestRelease.body         = cachedBody;
 		m_latestRelease.assetUrl    = WideStringToUtf8(settings->ReadString("ReleaseInfo", "Asset", ""));
 		m_hasCachedRelease = !m_latestRelease.empty();   // tag présent => cache utile
 		for (int i = 0; i < 8; ++i) {   // tags refuses : pas de re-proposition au demarrage suivant non plus

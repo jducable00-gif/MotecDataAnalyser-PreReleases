@@ -36,6 +36,19 @@ std::string toUtf8(const std::wstring& s) {                // inverse de toWideU
     return out;
 }
 
+// Normalise les fins de ligne d'un corps de release notes vers CRLF : l'API GitHub
+// renvoie des \n seuls et VCL (TStrings/TMemo) ne coupe la ligne que sur CR+LF —
+// sans cette normalisation, les notes s'afficheraient en une seule ligne continue.
+static std::string normalizeLineEndings(const std::string& in) {
+    std::string out; out.reserve(in.size());   // un \n devient 2 octets (\r\n), reallocation eventuelle sans consequence
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] == '\r') { out.push_back('\r'); if (i + 1 < in.size() && in[i+1] == '\n') ++i; }
+        else if (in[i] == '\n') { out += "\r\n"; }
+        else out.push_back(in[i]);
+    }
+    return out;
+}
+
 // Lambda-like découpe d'une URL absolue "https://host[:port]/path" en host / port / path.
 static bool splitHttpUrl(const std::string& url, std::wstring& outHost, int& outPort, std::wstring& outPath) {
     const size_t se = url.find("://");                      // schéma obligatoire (https://...)
@@ -210,7 +223,9 @@ bool parseLatestReleaseJson(const std::string& json, AppRelease& out) {
     out.tagName = tag->str;
     if (const JsonValue* v = root.find("html_url"))     if (v->type == JsonValue::String)  out.htmlUrl = v->str;
     if (const JsonValue* v = root.find("published_at")) if (v->type == JsonValue::String)  out.publishedAt = v->str;
-    if (const JsonValue* v = root.find("body"))         if (v->type == JsonValue::String)  out.body = v->str;
+    // Normalise les fins de ligne en CRLF : l'API GitHub renvoie des \n seuls et VCL
+    // (TStrings/TMemo) ne coupe la ligne que sur CR+LF — sans cela, notes en une seule ligne.
+    if (const JsonValue* v = root.find("body"))         if (v->type == JsonValue::String)  out.body = normalizeLineEndings(v->str);
 
     // assets[] : premier asset dont le nom se termine par ".exe" -> browser_download_url.
     if (const JsonValue* arr = root.find("assets"); arr && arr->type == JsonValue::Array) {
