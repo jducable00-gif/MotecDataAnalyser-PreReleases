@@ -30,6 +30,7 @@ enum class ChannelProfile {
     EvoM1 = 0,
     AMS2 = 1,
     Pmr = 2,          // PMR UDP live capture (no file import — profile only selects the live backend)
+    R3e = 3,          // RaceRoom shared-memory live capture ("$R3E")
     Generic = AMS2
 };
 

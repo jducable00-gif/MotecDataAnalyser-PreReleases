@@ -24,6 +24,8 @@
 #include "Ams2LiveCapture.h"
 #include "AcsEvoLiveCapture.h"
 #include "PmrLiveCapture.h"
+#include "RaceRoomLiveCapture.h"
+
 #include "LapReportGenerator.h"
 #include "VehicleDb.h"    // Ams2VehicleDb -- per-wheel brake fade thresholds (AMS2 only)
 #include "HttpServer.h"   // Phase B: embedded tablet report server
@@ -34,7 +36,7 @@
 #include <map>
 
 // Active live-capture backend.
-enum LiveMode { LIVE_AMS2 = 0, LIVE_EVO = 1, LIVE_PMR = 2 };
+enum LiveMode { LIVE_AMS2 = 0, LIVE_EVO = 1, LIVE_PMR = 2, LIVE_R3E = 3 };
 
 // [ReleaseInfo] Feeds de self-update : stable par defaut, pre-release en option.
 namespace ReleaseFeed
@@ -152,6 +154,7 @@ public:
     // physUsable=false: the physics page failed plausibility this tick — skip feeding its values into lap data only; all gfx-based detection (pit/track state, line crossing) runs normally.
     void __fastcall processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx, bool physUsable = true);
     void __fastcall processLiveFramePmir();
+    void __fastcall processLiveFrameR3e(const r3e_shared& frame);
 
     // Frame-sync adaptive poll interval + FPS surfacing (plan §6). Call once per accepted NewFrame.
     // simFpsHint: authoritative sim-reported fps when available (>0), else 0 to use measured arrival rate only.
@@ -267,6 +270,7 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
                 bool physUsable;
             } evo;
             Ams2SharedMemory ams;  // AMS2 (LIVE_AMS2) — POD, copied whole from shared memory
+            r3e_shared r3e;         // RaceRoom (LIVE_R3E) — POD copy of the $R3E block (~1 KB)
         };
         double timestampMs = 0.0;
 
@@ -304,7 +308,9 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
 	float previous_mCurrentTime = 0.0;
     bool firstLapStarted = false;
 
-    // --- Frame-sync adaptive interval + FPS display (plan §6) ---
+    int lastPitStateR3e       = -1;   // R3E pit_state (-1 N/A / 0 none ..) — transition tracker for lap finalization
+    int lastCompletedLapsR3e = -1;     // previous player.completed_laps (RaceRoom lap boundary); -1 = none yet
+    bool liveWasOnTrackR3e = false;   // pit->track transition detection for RaceRoom + FPS display (plan §6) ---
     double    liveLastNewFrameMs   = 0.0; // GetTickCount64() ms of last accepted NewFrame (for Hz measurement); 0 = none yet
     double    liveMeasuredHz       = 0.0; // EMA-smoothed capture rate in frames/sec (alpha=0.1)
     int32_t   liveEvoFpsAvg        = 0;   // last-seen AC EVO player_fps_avg for status display / comparison

@@ -184,6 +184,7 @@ LiveMode ProfileToLiveMode(ChannelProfile profile)
 {
 	if (profile == ChannelProfile::Pmr)   return LIVE_PMR;
 	if (profile == ChannelProfile::EvoM1) return LIVE_EVO;
+	if (profile == ChannelProfile::R3e)  return LIVE_R3E;
 	return LIVE_AMS2; // AMS2 and Generic both use the AMS2 shared-memory backend
 }
 
@@ -229,6 +230,8 @@ ChannelProfile ReadChannelProfileSetting()
 			return ChannelProfile::Generic;
 		if (value == (int)ChannelProfile::Pmr)
 			return ChannelProfile::Pmr;
+		if (value == (int)ChannelProfile::R3e)
+			return ChannelProfile::R3e;
 		return ChannelProfile::EvoM1;
 	} __finally {
 		delete settings;
@@ -1051,8 +1054,9 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 		ChannelProfileCombo->Items->Add("Evo");
 		ChannelProfileCombo->Items->Add("AMS2");
 		ChannelProfileCombo->Items->Add("PMR");
+		ChannelProfileCombo->Items->Add("RaceRoom");
 		int profileIndex = (int)ReadChannelProfileSetting();
-		if (profileIndex < 0 || profileIndex > (int)ChannelProfile::Pmr)
+		if (profileIndex < 0 || profileIndex > (int)ChannelProfile::R3e)
 			profileIndex = 0; // guard against stale INI values from older builds
 		ChannelProfileCombo->ItemIndex = profileIndex;
 		ChannelProfileCombo->OnChange = ChannelProfileComboChange;
@@ -2897,6 +2901,10 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
     if (liveMode == LIVE_AMS2 && !Ams2IsProcessRunning()) {
         return; // Keep retrying, but don't try to open shared memory yet
     }
+    // RaceRoom: same guard — don't open shared memory until RRRE.exe is running
+    if (liveMode == LIVE_R3E && !R3eIsProcessRunning()) {
+        return;
+    }
 
     std::string err;
     bool ok = false;
@@ -2917,6 +2925,9 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         }
         int port = ReadPmrPortSetting();
         ok = PmrOpenSocket(bindAddr, port, err);
+    } else if (liveMode == LIVE_R3E) {
+        // RaceRoom: open the `$R3E` shared-memory block.
+        ok = R3eOpenSharedMemory(err);
     } else {
         ok = Ams2OpenSharedMemory(err);
     }
@@ -2927,6 +2938,8 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         const bool isFrConn3 = ReadReportLanguageSetting() == ReportLanguage::French;
         liveConnected = true;
         liveActive = true;
+        if (liveMode == LIVE_R3E)
+            R3eResetFrameTracking(); // fresh connection: re-baseline the tick counter
         LiveLed->Brush->Color = clLime;
         LabelLiveStatus->Caption = isFrConn3 ? String(L"Connect\u00e9") : String("Connected");
         LabelLiveStatus->Font->Color = clGreen;
@@ -2941,7 +2954,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         // off the UI/VCL timer (bypasses Windows Timer resolution limits + keeps GDI+ repaints
         // from starving frame processing). PMR stays on the timer: its UDP drain is already
         // non-blocking. On reconnect the existing thread simply idles until liveConnected flips back.
-        if ((liveMode == LIVE_EVO || liveMode == LIVE_AMS2) && captureThread == nullptr) {
+        if ((liveMode == LIVE_EVO || liveMode == LIVE_AMS2 || liveMode == LIVE_R3E) && captureThread == nullptr) {
             stopCaptureThread = false;
             captureThread = new std::thread(&TFormMotecSetup::captureThreadFunc, this);
         }
@@ -2991,6 +3004,18 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
                     MemoSummary->Lines->Add(String(tblWarn.c_str()));
             }
 			//StatusBar1->SimpleText = "Live: connected (PMR) — waiting for telemetry";
+        }
+        else if (liveMode == LIVE_R3E)
+        {
+            // Track name is read from the shared-memory frame itself; let processLiveFrameR3e surface it.
+            MemoSummary->Lines->Add("Live: connected to RaceRoom. Waiting for car to leave pits...");
+
+            // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
+            {
+                std::string tblWarn = R3eGetChannelTableWarning();
+                if (!tblWarn.empty())
+                    MemoSummary->Lines->Add(String(tblWarn.c_str()));
+            }
         }
         else
         {
@@ -3045,6 +3070,8 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
             AcsEvoCloseSharedMemory();
         else if (liveMode == LIVE_PMR)
             PmrCloseSocket();
+        else if (liveMode == LIVE_R3E)
+            R3eCloseSharedMemory();
         else
             Ams2CloseSharedMemory();
 
@@ -3081,6 +3108,8 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
             AcsEvoCloseSharedMemory();
         else if (liveMode == LIVE_PMR)
             PmrCloseSocket();
+        else if (liveMode == LIVE_R3E)
+            R3eCloseSharedMemory();
         else
             Ams2CloseSharedMemory();
 
@@ -3252,6 +3281,26 @@ void TFormMotecSetup::captureThreadFunc()
             // AMS2 writes shared memory at ~60-90 Hz (~every 11 ms). An 8 ms poll comfortably exceeds
             // that rate, so no mSequenceNumber increment goes unseen — and the thread sleeps most of its time.
             std::this_thread::sleep_for(std::chrono::milliseconds(8));
+        } else if (liveActive && liveConnected && liveMode == LIVE_R3E) {
+
+            r3e_shared r;
+
+            FrameReadStatus status = R3eReadFrame(r);
+
+            if (status == FrameReadStatus::NewFrame) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (!stopCaptureThread) {
+                    CapturedFrame f;
+                    f.r3e  = r;   // POD copy of the shared-memory frame (~1 KB)
+                    f.timestampMs = (double)GetTickCount64();
+                    frameBuffer.push_back(f);
+                    if (frameBuffer.size() > 1000) frameBuffer.erase(frameBuffer.begin());
+                }
+            }
+
+            // RaceRoom writes shared memory at ~400 Hz (every 2.5 ms). A 1 ms poll comfortably exceeds that rate;
+            // the tick-counter double-check in R3eReadFrame rejects torn reads, so no frame is ever lost or duplicated.
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         else {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -3268,6 +3317,13 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
     // If it's not, the game has closed or crashed.
     if (liveMode == LIVE_AMS2 && !Ams2IsProcessRunning()) {
         MemoSummary->Lines->Add("Live: connection lost (AMS2 process not found).");
+        stopLiveCapture();
+        return;
+    }
+
+    // RaceRoom: same guard — if RRRE.exe has closed the shared memory is stale.
+    if (liveMode == LIVE_R3E && !R3eIsProcessRunning()) {
+        MemoSummary->Lines->Add("Live: connection lost (RaceRoom process not found).");
         stopLiveCapture();
         return;
     }
@@ -3292,6 +3348,22 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
         for (const auto& frame : localFrames) {
             updateLiveAdaptiveInterval(0.0);  // AMS2 has no sim-reported fps field: drive interval from measured arrival rate only
             processLiveFrame(frame.ams);
+        }
+    }
+    else if (liveMode == LIVE_R3E)
+    {
+        // RaceRoom uses the same dedicated-thread + buffer architecture as AMS2:
+        std::vector<CapturedFrame> localFrames;
+        {
+            std::lock_guard<std::mutex> lock(frameMutex);
+            localFrames.swap(frameBuffer);
+        }
+
+        if (localFrames.empty()) return;
+
+        for (const auto& frame : localFrames) {
+            updateLiveAdaptiveInterval(0.0);  // R3E has no sim-reported fps field: drive interval from measured arrival rate only
+            processLiveFrameR3e(frame.r3e);
         }
     }
     else if (liveMode == LIVE_EVO)
@@ -3323,6 +3395,101 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
             processLiveFrameEVO(frame.evo.phys, frame.evo.gfx, frame.evo.physUsable);
         }
     }
+}
+
+void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
+{
+	// RaceRoom has no pause state in shared memory; on-track/pit detection only.
+	bool onTrack = R3eIsOnTrack(frame);
+	bool inPits  = R3eIsInPits(frame);
+
+	// Auto-detect: car left pits with no laps recorded -> new session (same as AMS2).
+	if (onTrack && !liveWasOnTrackR3e && AutoDetectTrackCheckBox != NULL && AutoDetectTrackCheckBox->Checked && !liveLaps.empty()) {
+		resetLiveSession();
+		MemoSummary->Lines->Add("Auto: new session started.");
+	}
+
+	// Pit -> track transition with no laps in progress (session start / re-entry).
+	if (onTrack && !liveWasOnTrackR3e && !liveLapInProgress && sessionLapCounter == 0) {
+		resetAnalysisGraphics();
+		MemoSummary->Lines->Clear();
+		MemoGeneral->Lines->Clear();
+		MemoTyre->Lines->Clear();
+		MemoBrake->Lines->Clear();
+		MemoSuspension->Lines->Clear();
+		MemoEngineCooling->Lines->Clear();
+		MemoHandling->Lines->Clear();
+		MemoSummary->Lines->Add("Leaving Pits");
+
+		std::string trackName = frame.track_name[0] != 0 ? std::string((const char*)frame.track_name) : "";
+		if (!trackName.empty()) {
+			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(trackName));
+		}
+		// RaceRoom shared memory exposes no per-frame car name; use a generic label.
+		MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + "RaceRoom");
+
+		pushLiveStatusToTablet("RaceRoom", trackName, 0);
+		sessionLapCounter = 0;
+		lastCompletedLapsR3e = frame.completed_laps >= 0 ? (int)frame.completed_laps : -1;
+		firstLapStarted = false;
+	}
+
+	// Lap completion: completed_laps counter increased since last valid value.
+	if (frame.completed_laps >= 0 && lastCompletedLapsR3e >= 0 && frame.completed_laps > lastCompletedLapsR3e) {
+		sessionLapCounter++;
+		firstLapStarted = true;
+
+		if (liveLapInProgress) {
+			liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+			finalizeLiveLap();
+		}
+
+		if (onTrack) {
+			liveLapNumber = sessionLapCounter;
+			liveLapInProgress = true;
+			liveCurrentLap = LapStats();
+			liveCurrentLap.lapNumber  = liveLapNumber;
+			liveCurrentLap.startTime  = (double)GetTickCount64() / 1000.0;
+			liveCurrentLap.vehicleName = "RaceRoom";
+			std::string trackName2 = frame.track_name[0] != 0 ? std::string((const char*)frame.track_name) : "";
+			if (!trackName2.empty()) liveCurrentLap.trackName = trackName2;
+
+			MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
+			pushLiveStatusToTablet("RaceRoom", trackName2, liveLapNumber);
+		}
+	}
+
+	// Pit entry: first frame in pits after being on-track (pit_state 1..4 = active pit sequence).
+	if (inPits && !(lastPitStateR3e > 0 && lastPitStateR3e <= 4)) {
+		if (liveLapInProgress) {
+			liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+			finalizeLiveLap();
+		}
+
+		if (!liveLaps.empty()) {
+			generateLiveReport();
+		}
+
+		firstLapStarted = false;
+		MemoSummary->Lines->Add("Pit stop");
+
+		if (liveLaps.empty()) {
+			sessionLapCounter = 0;
+			firstLapStarted = false;
+			MemoSummary->Lines->Add("Back to garage with no valid lap.");
+		}
+	}
+
+	// Feed raw values into the current lap via mapping.json LIVE rows.
+	if (onTrack && liveLapInProgress) {
+		double timeSeconds = HighResClockSeconds();
+		R3eFeedLap(liveCurrentLap, frame, timeSeconds);
+	}
+
+	// Update history trackers (N/A guards: RaceRoom uses -1 for unavailable values).
+	if (frame.completed_laps >= 0) lastCompletedLapsR3e = (int)frame.completed_laps;
+	if (frame.pit_state != -1)     lastPitStateR3e    = frame.pit_state;
+	liveWasOnTrackR3e = onTrack;
 }
 
 void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
