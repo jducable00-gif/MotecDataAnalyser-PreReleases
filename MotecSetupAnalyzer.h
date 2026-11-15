@@ -17,7 +17,7 @@
 #include <cstdio>
 #include <cmath>
 #include <limits>
-#include <map>
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -448,7 +448,7 @@ public:
         return getValueInternal(alias, outValue, 0);
     }
 
-    const std::map<AnalysisAlias, double>& values() const {
+    const std::unordered_map<AnalysisAlias, double>& values() const {
         return m_values;
     }
 
@@ -457,13 +457,13 @@ private:
         if (depth > 16)
             return false;
 
-        std::map<AnalysisAlias, double>::const_iterator it = m_values.find(alias);
+        std::unordered_map<AnalysisAlias, double>::const_iterator it = m_values.find(alias);
         if (it != m_values.end()) {
             outValue = it->second;
             return true;
         }
 
-        std::map<AnalysisAlias, ChannelMapping>::const_iterator definition = m_virtualMappings.find(alias);
+        std::unordered_map<AnalysisAlias, ChannelMapping>::const_iterator definition = m_virtualMappings.find(alias);
         if (definition == m_virtualMappings.end() ||
             definition->second.operation != VirtualChannelOperation::DifferenceOfAverages ||
             definition->second.positiveInputs.empty() || definition->second.negativeInputs.empty())
@@ -490,8 +490,8 @@ private:
         return std::isfinite(outValue);
     }
 
-    std::map<AnalysisAlias, double> m_values;
-    std::map<AnalysisAlias, ChannelMapping> m_virtualMappings;
+    std::unordered_map<AnalysisAlias, double> m_values;
+    std::unordered_map<AnalysisAlias, ChannelMapping> m_virtualMappings;
 };
 
 enum class AnalysisSeverity {

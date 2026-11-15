@@ -16,8 +16,11 @@ if "%~1"=="Clean" del /q report_payload.json *.o 2>nul
 rem analyze_motec_setup.cpp defines the real TIniFile-based save/loadSymptomWeights,
 rem which pulls in RTLE.LIB -> link rtl.lib + vcl.lib. cp32mt.lib provides __Mtx_destroy
 rem (multithreaded C++ runtime, matches <Multithreaded>true</Multithreaded> in Project1.cbproj).
+rem VehicleDb*.cpp + ReleaseInfo.cpp: LapReportGenerator now references Ams2VehicleDb.
 bcc32c -I.. -o test_report_json.exe ^
     ..\analyze_motec_setup.cpp ..\MotecToCSV.cpp ..\RuleConfig.cpp ..\LapReportGenerator.cpp ^
+    ..\VehicleDb.cpp ..\ReleaseInfo.cpp ^
+    ..\VehicleDbData_A_F.cpp ..\VehicleDbData_F_M.cpp ..\VehicleDbData_M_S.cpp ..\VehicleDbData_S_V.cpp ^
     test_report_json.cpp rtl.lib vcl.lib cp32mt.lib
 
 if errorlevel 1 (

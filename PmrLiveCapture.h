@@ -196,6 +196,8 @@ std::string PmrGetTrackName();                            // from last RaceInfo 
 std::string PmrGetDriverName(int vehicleId);              // "" for unknown id
 int   PmrGetCurrentSector(int vehicleId);                 // -1 for unknown id / no state yet
 bool  PmrIsInPits(int vehicleId);                         // false for unknown id
+std::string PmrGetGameMode();                             // free-text game mode from last RaceInfo ("" if none) — e.g. "Race" / "Time Attack"; VERIFY exact values on first capture
+bool  PmrIsSessionFinished(int vehicleId);                // participant's sessionFinished byte; false for unknown id
 
 // Player vehicle id: set when the first PARTICIPANT_STATE with isPlayer==true arrives.
 // Returns -1 until then (or after a RaceInfo reset). Use this to drive lap detection —

@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MotecSetupForm.cpp — Implémentation de la fenêtre principale.
 //
 // Contient :
@@ -562,7 +562,7 @@ void __fastcall TFormMotecSetup::DoFormClose(TObject *Sender, TCloseAction &Acti
     // 2. Perform a strict sequential shutdown of capture resources
     stopLiveCapture(true);
     // 3. Stop the tablet server (HTTP + Winsock) while VCL is still fully alive.
-    if (_tabletServer.isRunning()) _tabletServer.stop();
+    _tablet.stopServer();
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,10 +1034,10 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	// Tablet viewer: auto-start the embedded HTTP server when enabled in INI.
 	if (ReadWebServerEnabled()) {
 		const int webPort = ReadWebServerPort();
-		_tabletServer.setPort(webPort);
-		if (!_tabletServer.isRunning() && _tabletServer.start()) {
+		_tablet.setPort(webPort);
+		if (_tablet.startServer()) {
 			StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
-				+ ":" + IntToStr(_tabletServer.port());
+				+ ":" + IntToStr(_tablet.activePort());
 		}
 	}
 
@@ -2773,6 +2773,12 @@ void __fastcall TFormMotecSetup::resetLiveSession()
 	liveEvoPrevNPos = -1.0f;  // AC EVO: no npos history until back on track
 	liveEvoPitReportDone = false;
 
+	// Race-end report state (race mode only): re-classify session type and arm the one-shot trigger for each new capture.
+	liveSessionType       = LST_UNKNOWN;
+	liveRaceEndReportDone = false;
+	lastAms2OwnRaceState  = -1;   // AMS2: no race-state history until the first frame
+	lastSessionPhaseR3e   = -1;   // R3E: no phase history until the first frame
+
 	// Frame-sync change-detection resets (plan Â§4/Â§5): after a session reset the
 	// first real frame from each sim must count as NewFrame again. Cheap no-ops
 	// for whichever source is not currently connected, so both are safe to call.
@@ -2976,11 +2982,17 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
             // Combine "track" and "track_configuration" for a full display name
             // e.g. "Silverstone" + "GP" → "Silverstone GP".
             SPageFileStaticEvo stat;
-            if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0)
+            if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0) {
                 liveTrackName = std::string(stat.track) +
                     (strlen(stat.track_configuration) ? " " : "") + stat.track_configuration;
 
-            MemoSummary->Lines->Add("Live: connected to AC EVO. Waiting for car to leave pits...");
+                // Race-end report: classify the session type from the static page. RACE and HOT_STINT are race-like
+                // (no pit return expected); TIME_ATTACK / CRUISE behave like practice — pit-entry trigger stays in charge.
+                if (liveSessionType == LST_UNKNOWN)
+                    liveSessionType = ((stat.session == AC_RACE) || (stat.session == AC_HOT_STINT)) ? LST_RACE : LST_PRACTICE_LIKE;
+            }
+
+            MemoSummary->Lines->Add(isFrConn3 ? String(L"En direct : connect\u00e9 \u00e0 AC EVO. En attente que la voiture quitte les stands...") : "Live: connected to AC EVO. Waiting for car to leave pits...");
 
             // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
             {
@@ -2995,7 +3007,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
             liveTrackName.clear(); // refreshed from RaceInfo packets as they arrive
             String pmrAddr = ReadPmrBindAddressSetting().Trim();
             String pmrWhere = pmrAddr.IsEmpty() ? "all interfaces" : ("*" + pmrAddr);
-            MemoSummary->Lines->Add("Live: PMR UDP listening on " + pmrWhere + ":" + IntToStr(ReadPmrPortSetting()) + ". Waiting for telemetry...");
+            MemoSummary->Lines->Add(isFrConn3 ? (String(L"En direct : \u00e9coute en UDP sur ") + pmrWhere + L":" + IntToStr(ReadPmrPortSetting()) + L". En attente de t\u00e9l\u00e9m\u00e9trie...") : ("Live: PMR UDP listening on " + pmrWhere + ":" + IntToStr(ReadPmrPortSetting()) + ". Waiting for telemetry..."));
 
             // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
             {
@@ -3008,7 +3020,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         else if (liveMode == LIVE_R3E)
         {
             // Track name is read from the shared-memory frame itself; let processLiveFrameR3e surface it.
-            MemoSummary->Lines->Add("Live: connected to RaceRoom. Waiting for car to leave pits...");
+            MemoSummary->Lines->Add(isFrConn3 ? String(L"En direct : connect\u00e9 \u00e0 RaceRoom. En attente que la voiture quitte les stands...") : "Live: connected to RaceRoom. Waiting for car to leave pits...");
 
             // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
             {
@@ -3023,7 +3035,7 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
             // immediately seeing a frame that says we are on track.
             // Instead, let processLiveFrame handle the status updates.
 			//StatusBar1->SimpleText = "Live: connected — waiting for car to leave pits...";
-            MemoSummary->Lines->Add("Live: connected to AMS2. Waiting for car to leave pits...");
+            MemoSummary->Lines->Add(isFrConn3 ? String(L"En direct : connect\u00e9 \u00e0 AMS2. En attente que la voiture quitte les stands...") : "Live: connected to AMS2. Waiting for car to leave pits...");
 
             // Surface channel-table problems immediately (e.g. mapping.json missing next to the exe).
             {
@@ -3100,6 +3112,12 @@ void __fastcall TFormMotecSetup::stopLiveCapture(bool isShuttingDown)
         // If a lap is in progress, finalize it (only if not shutting down and UI exists)
         if (!isShuttingDown && liveLapInProgress && MemoSummary != NULL)
             finalizeLiveLap();
+
+        // Race-end safety net: user stopped the capture right after finishing on track — generate the final report now.
+        if (!isShuttingDown && !liveRaceEndReportDone && !liveLaps.empty() && MemoSummary != NULL) {
+            generateLiveReport();
+            liveRaceEndReportDone = true;   // latch: stop path must not double-report with a later race-end trigger
+        }
 
         Button1->Enabled = true;
         ButtonLoad->Enabled = true;
@@ -3376,6 +3394,10 @@ void __fastcall TFormMotecSetup::LiveTimerTimer(TObject *Sender)
             if (AcsEvoReadStatic(stat) && strlen(stat.track) > 0)
                 liveTrackName = std::string(stat.track) +
                     (strlen(stat.track_configuration) ? " " : "") + stat.track_configuration;
+
+            // Session type may also have been unavailable at connect time — classify on the first successful read.
+            if (liveSessionType == LST_UNKNOWN)
+                liveSessionType = ((stat.session == AC_RACE) || (stat.session == AC_HOT_STINT)) ? LST_RACE : LST_PRACTICE_LIKE;
         }
 
         // Process all frames accumulated in the buffer since last tick
@@ -3484,6 +3506,29 @@ void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
 	if (onTrack && liveLapInProgress) {
 		double timeSeconds = HighResClockSeconds();
 		R3eFeedLap(liveCurrentLap, frame, timeSeconds);
+	}
+
+	// Race-end report: classify session type from shared memory; race mode only triggers the one-shot finalization.
+	if (liveSessionType == LST_UNKNOWN && frame.session_type != R3E_SESSION_UNAVAILABLE) {
+		liveSessionType = (frame.session_type == R3E_SESSION_RACE) ? LST_RACE : LST_PRACTICE_LIKE;
+	}
+
+	// Race-end detection: session_phase transition into CHECKERED (= end of race). Finalize the open lap and generate
+	// the report once — in a race there is no pit return, so this replaces the pit-entry trigger for race mode.
+	if (liveSessionType == LST_RACE && frame.session_phase != R3E_SESSION_PHASE_UNAVAILABLE) {
+		const bool wasCheckered = (lastSessionPhaseR3e == R3E_SESSION_PHASE_CHECKERED);
+		if (!wasCheckered && frame.session_phase == R3E_SESSION_PHASE_CHECKERED && !liveRaceEndReportDone) {
+			if (liveLapInProgress) {
+				liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+				finalizeLiveLap();
+			}
+			if (!liveLaps.empty()) {
+				generateLiveReport();
+				MemoSummary->Lines->Add("Race finished — report generated.");
+			}
+			liveRaceEndReportDone = true;   // latch: one final report per session even if the phase persists
+		}
+		lastSessionPhaseR3e = frame.session_phase;
 	}
 
 	// Update history trackers (N/A guards: RaceRoom uses -1 for unavailable values).
@@ -3601,6 +3646,31 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 		Ams2FeedLap(liveCurrentLap, frame, timeSeconds);
     }
 
+	// Race-end report: classify session type from shared memory (first valid frame wins). RACE is the only race-like mode.
+	if (liveSessionType == LST_UNKNOWN && frame.mSessionState != SESSION_INVALID) {
+		liveSessionType = (frame.mSessionState == SESSION_RACE) ? LST_RACE : LST_PRACTICE_LIKE;
+	}
+
+	// Race-end detection: the viewed participant's race state enters a finished set (FINISHED/DISQUALIFIED/RETIRED/DNF).
+	// AMS2 has no global "session over" flag, so our own car finishing is the signal. Finalize the open lap and generate
+	// the report once — in a race there is no pit return, so this replaces the pit-entry trigger for race mode.
+	if (liveSessionType == LST_RACE) {
+		const unsigned int ownState = frame.mRaceStates[frame.mViewedParticipantIndex];
+		const bool wasFinishedSet  = lastAms2OwnRaceState >= RACESTATE_FINISHED && lastAms2OwnRaceState < RACESTATE_MAX;
+		if (!wasFinishedSet && ownState >= RACESTATE_FINISHED && ownState < RACESTATE_MAX && !liveRaceEndReportDone) {
+			if (liveLapInProgress) {
+				liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+				finalizeLiveLap();
+			}
+			if (!liveLaps.empty()) {
+				generateLiveReport();
+				MemoSummary->Lines->Add("Race finished — report generated.");
+			}
+			liveRaceEndReportDone = true;   // latch: one final report per session even if the state persists
+		}
+		lastAms2OwnRaceState = (int)ownState;
+	}
+
 	// Update history for next frame
     lastPitMode = frame.mPitMode;
 	liveWasOnTrack = onTrack;
@@ -3704,6 +3774,26 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     if (!onTrack)
         liveEvoPrevNPos = -1.0f;      // stale position must not trigger a wrap after rejoining the track
 
+    // Race-end report: in race mode, detect session end from the graphics page — checkered flag for our car,
+    // explicit end_session_flag, or lap count reached (total_lap >= 1 guards against unbounded sessions). Finalize the
+    // open lap and generate the report once; mirrors the pit-report pattern above. In a race there is no guaranteed
+    // pit return after the checkered flag, so this replaces the pit-entry trigger for race mode.
+    if (liveSessionType == LST_RACE && !liveRaceEndReportDone) {
+        // total_lap <= 0 means unbounded session (time attack / cruise) — never treat that as "race over".
+        const bool lapCountReached = gfx.session_state.total_lap >= 1 && gfx.session_state.current_lap >= gfx.session_state.total_lap;
+        if ((gfx.global_flag == AC_CHECKERED_FLAG || gfx.session_state.end_session_flag != 0 || lapCountReached)) {
+            if (liveLapInProgress) {
+                liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+                finalizeLiveLap();
+            }
+            if (!liveLaps.empty()) {
+                generateLiveReport();
+                MemoSummary->Lines->Add("Race finished — report generated.");
+            }
+            liveRaceEndReportDone = true;   // latch: one final report per session even if the flag persists
+        }
+    }
+
     liveWasOnTrack = onTrack;
 }
 
@@ -3799,6 +3889,30 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         }
     }
 
+    // --- Race-end report: classify session type from the free-text game mode. Only a non-empty value commits — "" is just "no RaceInfo yet". VERIFY exact values on a real capture (e.g. "Race" / "Time Attack"). ---
+    if (liveSessionType == LST_UNKNOWN) {
+        std::string gm = PmrGetGameMode();   // "" until the first RaceInfo arrives
+        if (!gm.empty()) {
+            for (char& c : gm) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');  // ASCII lowercase, no <cctype> dependency
+            liveSessionType = (gm.find("race") != std::string::npos) ? LST_RACE : LST_PRACTICE_LIKE;
+        }
+    }
+
+    // --- Race-end detection: the player's sessionFinished byte is set. Finalize the open lap and generate the report once — in a race there is no pit return, so this replaces the pit-entry trigger for race mode. ---
+    if (liveSessionType == LST_RACE && !liveRaceEndReportDone) {
+        if (PmrIsSessionFinished(playerId)) {
+            if (liveLapInProgress) {
+                liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
+                finalizeLiveLap();
+            }
+            if (!liveLaps.empty()) {
+                generateLiveReport();
+                MemoSummary->Lines->Add("Race finished — report generated.");
+            }
+            liveRaceEndReportDone = true;   // latch: one final report per session even if the flag persists
+        }
+    }
+
     // Update tracking state for next tick.
     if (sector >= 0) pmrPrevSector = sector;   // only update when we have a valid reading
     liveWasOnTrack   = onTrack;
@@ -3856,12 +3970,7 @@ void __fastcall TFormMotecSetup::generateLiveReport()
 void __fastcall TFormMotecSetup::pushLiveStatusToTablet(const std::string& vehicleName,
                                    const std::string& trackLocation, int lapCount)
 {
-    if (!_tabletServer.isRunning()) return;
-
-    ++tabletVersion_;
-    std::string json = "{\"version\":" + std::to_string(tabletVersion_) + ",\"meta\":{\"hasData\":true,\"carName\":\"" + reportjson::jsonEscape(vehicleName) + "\",\"trackName\":\"" + reportjson::jsonEscape(trackLocation) + "\",\"lapCount\":"
-        + (lapCount > 0 ? std::to_string(lapCount).c_str() : "null") + ",\"onTrack\":true},\"sections\":{},\"lapStats\":null}";
-    _tabletServer.setPayload(json);
+	_tablet.publishLiveStatus(vehicleName, trackLocation, lapCount);
 }
 
 // B5: push a fresh JSON payload to the tablet server after every analysis.
@@ -3869,27 +3978,26 @@ void __fastcall TFormMotecSetup::pushLiveStatusToTablet(const std::string& vehic
 // polling clients detect changes without re-rendering identical data.
 void __fastcall TFormMotecSetup::publishToTabletServer(const ReportResult& result, const std::vector<LapStats>& laps)
 {
-    if (!_tabletServer.isRunning()) return;
-
-    LapStats avg = buildAverageLapData(laps);
-    int included = (int)LapReportGenerator::getValidLaps(laps).size();
-    ++tabletVersion_;
-    _tabletServer.setPayload(reportjson::buildReportJson(result, avg, included, tabletVersion_));
+	_tablet.publishReport(result, laps);
 }
 
 // Phase D3: live start/stop/restart the tablet web server when settings change in Settings dialog.
 void TFormMotecSetup::ApplyWebServerSettings()
 {
-    if (_tabletServer.isRunning()) _tabletServer.stop();
+    _tablet.stopServer();
 
     int port = ReadWebServerPort();
     bool enabled = ReadWebServerEnabled();
 
     if (enabled) {
-        _tabletServer.setPort(port);
-        if (!_tabletServer.start()) return;  // start() already shows an error message on failure
-        StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
-                + ":" + IntToStr(_tabletServer.port());
+        _tablet.setPort(port);
+        // start() already shows an error message on failure
+        if (_tablet.startServer()) {
+            StatusBar1->SimpleText = "Tablet viewer active — http://" + getLocalLanIp()
+                    + ":" + IntToStr(_tablet.activePort());
+        } else {
+            StatusBar1->SimpleText = "";
+        }
     } else {
         StatusBar1->SimpleText = "";
     }

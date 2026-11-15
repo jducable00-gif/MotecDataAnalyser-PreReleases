@@ -477,36 +477,31 @@ static void testVehicleDb() {
     bool foundGhost = db.find("Nonexistent_Car_XYZ_999", ghost);
     CHECK(!foundGhost);
 
-    // H6: CG dual-form parsing (CgRangeData).
-    //  - Alpine A110 GT4 Evo : CG fixes -> scalaires dans le JSON.
+    // H6: CG data parsing (CgRangeData). The DB stores fixed scalar values only;
+    // the generator rejects object-form ranges, so all cars have hasFixedValue=true.
     if (found) {
-        const CgRangeData& cgR = alpine.chassis.cgRear;
-        CHECK(cgR.present);
-        CHECK(!cgR.isAdjustable());                 // scalaire => fixe
-        CHECK(std::fabs(cgR.valueM() - 0.56) < 1e-9);   // CGRearRange: 0.56
+        const CgRangeData& cgRt = alpine.chassis.cgRight;
+        CHECK(cgRt.present);
+        CHECK(!cgRt.isAdjustable());                 // scalaire => fixe
+        CHECK(std::fabs(cgRt.valueM() - 0.56f) < 1e-6f);   // CGRightRange: ~0.56 (float precision)
 
-        const CgRangeData& cgL = alpine.chassis.cgRight;
-        CHECK(!cgL.isAdjustable());                 // scalaire => fixe
-        CHECK(std::fabs(cgL.valueM() - 0.5) < 1e-9);    // CGRightRange: 0.5
+        const CgRangeData& cgRe = alpine.chassis.cgRear;
+        CHECK(!cgRe.isAdjustable());                 // scalaire => fixe
+        CHECK(std::fabs(cgRe.valueM() - 0.5f) < 1e-6f);   // CGRearRange: ~0.5 (float precision)
     }
 
-    //  - Stock USA Gen1 : plages reglables {min,step,max} + setting.
+    // Stock USA Gen1 : fixed scalar CG values from the DB row.
     VehicleInfo stock;
     bool foundStock = db.find("stock_usa_gen1", stock);   // '_' doit matcher ' '
     CHECK_MSG(foundStock, "find('stock_usa_gen1') must succeed (underscore normalization)");
     if (foundStock) {
-        const CgRangeData& cgR = stock.chassis.cgRear;
-        CHECK(cgR.present && cgR.isAdjustable());   // objet => reglable
-        CHECK(std::fabs(cgR.minM - 0.472) < 1e-9);
-        CHECK(std::fabs(cgR.stepM - 0.002) < 1e-9);
-        CHECK(std::fabs(cgR.maxPositions - 20.0) < 1e-9);
-        CHECK(cgR.hasSetting && std::fabs(cgR.settingIndex - 13.0) < 1e-9);
-        // position courante = min + step * setting (= CGRearValue du DB : 0.498)
-        CHECK(std::fabs(cgR.valueM() - (0.472 + 0.002 * 13.0)) < 1e-9);
+        const CgRangeData& cgRt = stock.chassis.cgRight;
+        CHECK(cgRt.present && !cgRt.isAdjustable());  // scalaire fixe dans le DB
+        CHECK(std::fabs(cgRt.valueM() - 0.48f) < 1e-6f);   // CGRightRange: ~0.48
 
-        const CgRangeData& cgL = stock.chassis.cgRight;
-        CHECK(cgL.present && cgL.isAdjustable());   // objet => reglable
-        CHECK(std::fabs(cgL.valueM() - (0.49 + 0.002 * 5.0)) < 1e-9);  // = 0.5 (= CGRightValue)
+        const CgRangeData& cgRe = stock.chassis.cgRear;
+        CHECK(cgRe.present && !cgRe.isAdjustable());  // scalaire fixe dans le DB
+        CHECK(std::fabs(cgRe.valueM() - 0.458f) < 1e-6f);   // CGRearRange: ~0.458
     }
 
     std::printf("   vehicle DB: valid, %u cars, find/case-insensitive/unknown OK\n",

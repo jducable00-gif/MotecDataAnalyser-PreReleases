@@ -840,6 +840,16 @@ bool PmrIsInPits(int vehicleId) {
     return it->second.inPits != 0;                          // single status byte: non-zero = pit box occupied
 }
 
+std::string PmrGetGameMode() {
+    return pmr_net::s_lastRaceInfo.gameMode;   // "" until the first RaceInfo arrives (free text, e.g. "Race" / "Time Attack")
+}
+
+bool PmrIsSessionFinished(int vehicleId) {
+    auto it = pmr_net::s_participants.find(static_cast<int32_t>(vehicleId));
+    if (it == pmr_net::s_participants.end()) return false; // unknown id — no state yet for this car
+    return it->second.sessionFinished != 0;                // single status byte: non-zero = session over for that participant
+}
+
 int PmrGetPlayerId() {
     return pmr_net::s_playerVehicleId;   // -1 until the first isPlayer==true participant state arrives
 }

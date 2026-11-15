@@ -203,83 +203,40 @@ enum ChannelDispatch {
 
 static ChannelDispatch dispatchForChannel(const std::string& key, ChannelProfile profile) {
     // Check standard raw channel names first (Motec LD / EVO / AMS2 native names).
-    const std::string& lookupKey = key;
+    static const std::unordered_map<std::string, ChannelDispatch> dispatchMap = {
+        {"ROTY", CH_ROTY}, {"LAT_G", CH_LAT_G}, {"LONG_G", CH_LONG_G}, {"BRAKE", CH_BRAKE},
+        {"THROTTLE", CH_THROTTLE}, {"SUS_TRAVEL_LF", CH_SUS_TRAVEL_LF}, {"SUS_TRAVEL_RF", CH_SUS_TRAVEL_RF},
+        {"SUS_TRAVEL_LR", CH_SUS_TRAVEL_LR}, {"SUS_TRAVEL_RR", CH_SUS_TRAVEL_RR}, {"SPEED", CH_SPEED},
+        {"RPMS", CH_RPMS}, {"WHEEL_SPEED_LF", CH_WHEEL_SPEED_LF}, {"WHEEL_SPEED_RF", CH_WHEEL_SPEED_RF},
+        {"WHEEL_SPEED_LR", CH_WHEEL_SPEED_LR}, {"WHEEL_SPEED_RR", CH_WHEEL_SPEED_RR}, {"BRAKE_TEMP_LF", CH_BRAKE_TEMP_LF},
+        {"BRAKE_TEMP_RF", CH_BRAKE_TEMP_RF}, {"BRAKE_TEMP_LR", CH_BRAKE_TEMP_LR}, {"BRAKE_TEMP_RR", CH_BRAKE_TEMP_RR},
+        {"TYRE_PRESS_LF", CH_TYRE_PRESS_LF}, {"TYRE_PRESS_RF", CH_TYRE_PRESS_RF}, {"TYRE_PRESS_LR", CH_TYRE_PRESS_LR},
+        {"TYRE_PRESS_RR", CH_TYRE_PRESS_RR}, {"BUMPSTOPUP_TRAVEL_LF", CH_BUMPSTOPUP_TRAVEL_LF},
+        {"BUMPSTOPUP_TRAVEL_RF", CH_BUMPSTOPUP_TRAVEL_RF}, {"BUMPSTOPUP_TRAVEL_LR", CH_BUMPSTOPUP_TRAVEL_LR},
+        {"BUMPSTOPUP_TRAVEL_RR", CH_BUMPSTOPUP_TRAVEL_RR}, {"AERO_HEIGHT0", CH_AERO_HEIGHT0},
+        {"AERO_HEIGHT1", CH_AERO_HEIGHT1}, {"AERO_HEIGHT2", CH_AERO_HEIGHT2}, {"AERO_HEIGHT3", CH_AERO_HEIGHT3},
+        {"AERO_BALANCE", CH_AERO_BALANCE}, {"LSD_LOCKING_TORQUE", CH_LSD_LOCKING_TORQUE}, {"C_SURF_TEMP_LF", CH_C_SURF_TEMP_LF},
+        {"C_SURF_TEMP_RF", CH_C_SURF_TEMP_RF}, {"C_SURF_TEMP_LR", CH_C_SURF_TEMP_LR}, {"C_SURF_TEMP_RR", CH_C_SURF_TEMP_RR},
+        {"TYRE_INNER_TEMP_LF", CH_TYRE_INNER_TEMP_LF}, {"TYRE_CENTRE_TEMP_LF", CH_TYRE_CENTRE_TEMP_LF},
+        {"TYRE_OUTER_TEMP_LF", CH_TYRE_OUTER_TEMP_LF}, {"TYRE_INNER_TEMP_RF", CH_TYRE_INNER_TEMP_RF},
+        {"TYRE_CENTRE_TEMP_RF", CH_TYRE_CENTRE_TEMP_RF}, {"TYRE_OUTER_TEMP_RF", CH_TYRE_OUTER_TEMP_RF},
+        {"TYRE_INNER_TEMP_LR", CH_TYRE_INNER_TEMP_LR}, {"TYRE_CENTRE_TEMP_LR", CH_TYRE_CENTRE_TEMP_LR},
+        {"TYRE_OUTER_TEMP_LR", CH_TYRE_OUTER_TEMP_LR}, {"TYRE_INNER_TEMP_RR", CH_TYRE_INNER_TEMP_RR},
+        {"TYRE_CENTRE_TEMP_RR", CH_TYRE_CENTRE_TEMP_RR}, {"TYRE_OUTER_TEMP_RR", CH_TYRE_OUTER_TEMP_RR},
+        {"ENGINE_OIL_TEMP", CH_ENGINE_OIL_TEMP}, {"ENGINE_WATER_TEMP", CH_ENGINE_WATER_TEMP},
+        {"FUEL_LEVEL", CH_FUEL_LEVEL}, {"FUEL_PRES", CH_FUEL_PRES}, {"TRACK_TEMP", CH_TRACK_TEMP},
+        {"AMBIENT_TEMP", CH_AMBIENT_TEMP}, {"BRAKE_TORQUE_LF", CH_BRAKE_TORQUE_LF}, {"BRAKE_TORQUE_RF", CH_BRAKE_TORQUE_RF},
+        {"BRAKE_TORQUE_LR", CH_BRAKE_TORQUE_LR}, {"BRAKE_TORQUE_RR", CH_BRAKE_TORQUE_RR}, {"WHEEL_SR_LF", CH_WHEEL_SR_LF},
+        {"WHEEL_SR_RF", CH_WHEEL_SR_RF}, {"WHEEL_SR_LR", CH_WHEEL_SR_LR}, {"WHEEL_SR_RR", CH_WHEEL_SR_RR},
+        {"TYRE_TAIR_LF", CH_TYRE_TAIR_LF}, {"TYRE_TAIR_RF", CH_TYRE_TAIR_RF}, {"TYRE_TAIR_LR", CH_TYRE_TAIR_LR},
+        {"TYRE_TAIR_RR", CH_TYRE_TAIR_RR}, {"SUSP_VEL_LF", CH_SUSP_VEL_LF}, {"SUSP_VEL_RF", CH_SUSP_VEL_RF},
+        {"SUSP_VEL_LR", CH_SUSP_VEL_LR}, {"SUSP_VEL_RR", CH_SUSP_VEL_RR}, {"BRAKE_BIAS_SETTING", CH_BRAKE_BIAS_SETTING},
+        {"TCS_ACTIVE", CH_TCS_ACTIVE}, {"ABS_ACTIVE", CH_ABS_ACTIVE}, {"LAP_BEACON", CH_LAP_BEACON}
+    };
 
-    if (lookupKey == "ROTY") return CH_ROTY;
-    if (lookupKey == "LAT_G") return CH_LAT_G;
-    if (lookupKey == "LONG_G") return CH_LONG_G;
-    if (lookupKey == "BRAKE") return CH_BRAKE;
-    if (lookupKey == "THROTTLE") return CH_THROTTLE;
-    if (lookupKey == "SUS_TRAVEL_LF") return CH_SUS_TRAVEL_LF;
-    if (lookupKey == "SUS_TRAVEL_RF") return CH_SUS_TRAVEL_RF;
-    if (lookupKey == "SUS_TRAVEL_LR") return CH_SUS_TRAVEL_LR;
-    if (lookupKey == "SUS_TRAVEL_RR") return CH_SUS_TRAVEL_RR;
-    if (lookupKey == "SPEED") return CH_SPEED;
-    if (lookupKey == "RPMS") return CH_RPMS;
-    if (lookupKey == "WHEEL_SPEED_LF") return CH_WHEEL_SPEED_LF;
-    if (lookupKey == "WHEEL_SPEED_RF") return CH_WHEEL_SPEED_RF;
-    if (lookupKey == "WHEEL_SPEED_LR") return CH_WHEEL_SPEED_LR;
-    if (lookupKey == "WHEEL_SPEED_RR") return CH_WHEEL_SPEED_RR;
-    if (lookupKey == "BRAKE_TEMP_LF") return CH_BRAKE_TEMP_LF;
-    if (lookupKey == "BRAKE_TEMP_RF") return CH_BRAKE_TEMP_RF;
-    if (lookupKey == "BRAKE_TEMP_LR") return CH_BRAKE_TEMP_LR;
-    if (lookupKey == "BRAKE_TEMP_RR") return CH_BRAKE_TEMP_RR;
-    if (lookupKey == "TYRE_PRESS_LF") return CH_TYRE_PRESS_LF;
-    if (lookupKey == "TYRE_PRESS_RF") return CH_TYRE_PRESS_RF;
-    if (lookupKey == "TYRE_PRESS_LR") return CH_TYRE_PRESS_LR;
-    if (lookupKey == "TYRE_PRESS_RR") return CH_TYRE_PRESS_RR;
-    if (lookupKey == "BUMPSTOPUP_TRAVEL_LF") return CH_BUMPSTOPUP_TRAVEL_LF;
-    if (lookupKey == "BUMPSTOPUP_TRAVEL_RF") return CH_BUMPSTOPUP_TRAVEL_RF;
-    if (lookupKey == "BUMPSTOPUP_TRAVEL_LR") return CH_BUMPSTOPUP_TRAVEL_LR;
-    if (lookupKey == "BUMPSTOPUP_TRAVEL_RR") return CH_BUMPSTOPUP_TRAVEL_RR;
-    if (lookupKey == "AERO_HEIGHT0") return CH_AERO_HEIGHT0;
-    if (lookupKey == "AERO_HEIGHT1") return CH_AERO_HEIGHT1;
-    if (lookupKey == "AERO_HEIGHT2") return CH_AERO_HEIGHT2;
-    if (lookupKey == "AERO_HEIGHT3") return CH_AERO_HEIGHT3;
-    if (lookupKey == "AERO_BALANCE") return CH_AERO_BALANCE;
-    if (lookupKey == "LSD_LOCKING_TORQUE") return CH_LSD_LOCKING_TORQUE;
-    if (lookupKey == "C_SURF_TEMP_LF") return CH_C_SURF_TEMP_LF;
-    if (lookupKey == "C_SURF_TEMP_RF") return CH_C_SURF_TEMP_RF;
-    if (lookupKey == "C_SURF_TEMP_LR") return CH_C_SURF_TEMP_LR;
-    if (lookupKey == "C_SURF_TEMP_RR") return CH_C_SURF_TEMP_RR;
-    if (lookupKey == "TYRE_INNER_TEMP_LF") return CH_TYRE_INNER_TEMP_LF;
-    if (lookupKey == "TYRE_CENTRE_TEMP_LF") return CH_TYRE_CENTRE_TEMP_LF;
-    if (lookupKey == "TYRE_OUTER_TEMP_LF") return CH_TYRE_OUTER_TEMP_LF;
-    if (lookupKey == "TYRE_INNER_TEMP_RF") return CH_TYRE_INNER_TEMP_RF;
-    if (lookupKey == "TYRE_CENTRE_TEMP_RF") return CH_TYRE_CENTRE_TEMP_RF;
-    if (lookupKey == "TYRE_OUTER_TEMP_RF") return CH_TYRE_OUTER_TEMP_RF;
-    if (lookupKey == "TYRE_INNER_TEMP_LR") return CH_TYRE_INNER_TEMP_LR;
-    if (lookupKey == "TYRE_CENTRE_TEMP_LR") return CH_TYRE_CENTRE_TEMP_LR;
-    if (lookupKey == "TYRE_OUTER_TEMP_LR") return CH_TYRE_OUTER_TEMP_LR;
-    if (lookupKey == "TYRE_INNER_TEMP_RR") return CH_TYRE_INNER_TEMP_RR;
-    if (lookupKey == "TYRE_CENTRE_TEMP_RR") return CH_TYRE_CENTRE_TEMP_RR;
-	if (lookupKey == "TYRE_OUTER_TEMP_RR") return CH_TYRE_OUTER_TEMP_RR;
-	if (lookupKey == "ENGINE_OIL_TEMP") return CH_ENGINE_OIL_TEMP;
-    if (lookupKey == "ENGINE_WATER_TEMP") return CH_ENGINE_WATER_TEMP;
-    if (lookupKey == "FUEL_LEVEL") return CH_FUEL_LEVEL;
-    if (lookupKey == "FUEL_PRES") return CH_FUEL_PRES;
-    if (lookupKey == "TRACK_TEMP") return CH_TRACK_TEMP;
-    if (lookupKey == "AMBIENT_TEMP") return CH_AMBIENT_TEMP;
-    if (lookupKey == "BRAKE_TORQUE_LF") return CH_BRAKE_TORQUE_LF;
-    if (lookupKey == "BRAKE_TORQUE_RF") return CH_BRAKE_TORQUE_RF;
-    if (lookupKey == "BRAKE_TORQUE_LR") return CH_BRAKE_TORQUE_LR;
-    if (lookupKey == "BRAKE_TORQUE_RR") return CH_BRAKE_TORQUE_RR;
-    if (lookupKey == "WHEEL_SR_LF") return CH_WHEEL_SR_LF;
-    if (lookupKey == "WHEEL_SR_RF") return CH_WHEEL_SR_RF;
-    if (lookupKey == "WHEEL_SR_LR") return CH_WHEEL_SR_LR;
-    if (lookupKey == "WHEEL_SR_RR") return CH_WHEEL_SR_RR;
-    if (lookupKey == "TYRE_TAIR_LF") return CH_TYRE_TAIR_LF;
-    if (lookupKey == "TYRE_TAIR_RF") return CH_TYRE_TAIR_RF;
-    if (lookupKey == "TYRE_TAIR_LR") return CH_TYRE_TAIR_LR;
-    if (lookupKey == "TYRE_TAIR_RR") return CH_TYRE_TAIR_RR;
-    if (lookupKey == "SUSP_VEL_LF") return CH_SUSP_VEL_LF;
-    if (lookupKey == "SUSP_VEL_RF") return CH_SUSP_VEL_RF;
-    if (lookupKey == "SUSP_VEL_LR") return CH_SUSP_VEL_LR;
-    if (lookupKey == "SUSP_VEL_RR") return CH_SUSP_VEL_RR;
-    if (lookupKey == "BRAKE_BIAS_SETTING") return CH_BRAKE_BIAS_SETTING;
-    if (lookupKey == "TCS_ACTIVE") return CH_TCS_ACTIVE;
-    if (lookupKey == "ABS_ACTIVE") return CH_ABS_ACTIVE;
-    if (lookupKey == "LAP_BEACON") return CH_LAP_BEACON;
+    auto it = dispatchMap.find(key);
+    if (it != dispatchMap.end()) return it->second;
+
     return CH_NONE;
 }
 

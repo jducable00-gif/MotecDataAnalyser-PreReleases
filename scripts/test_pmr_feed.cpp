@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "pmr_test_common.h"   // Writer + packet builders (identical wire data to Gates 1 & 2)
+#include "RuleConfig.h"        // loadChannelMappings() — needed before PmrGetChannelTable's one-shot build
 
 
 // Satisfy the extern in MotecSetupAnalyzer.h (pulled transitively via PmrLiveCapture.h).
@@ -392,6 +393,10 @@ int main() {
 
     WSADATA wsa;                                                // init Winsock for this process's own raw sockets
     CHECK(WSAStartup(MAKEWORD(2, 2), &wsa) == 0);              // (PmrOpenSocket does its own lazy startup too — ref-counted per process)
+
+    // Load channel mappings BEFORE any PmrFeedLap call so the one-shot PMR table
+    // resolves aliases correctly. Path is relative to scripts/ where the exe runs.
+    RuleConfig::instance().loadChannelMappings("..\\MotecDataAnalyser.mapping.json");
 
     testFeed();          // F1 + F2 + A1 — pure decode/feed path, no socket
     testMetadata();      // M1 — real UDP exchange for the Phase-3 accessors

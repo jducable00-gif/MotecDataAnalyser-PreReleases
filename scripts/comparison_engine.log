@@ -1,0 +1,36 @@
+Phase 4 diagnostic-engine test harness
+-----------------------------------------------
+
+== A: Phase segmentation ==
+   segmentation: straight/ambiguous/mid-corner-edge/braking-edge OK
+
+== B: Channel-absent matrix (graceful degradation) ==
+   channel-absent: abstain + traceability reasons OK
+
+== C: Cause ranking + confidence labels at boundaries ==
+   ranking order + label boundaries (0.30/0.60/0.85) OK
+
+== D: L/R asymmetry verdicts ==
+   L/R verdicts: comparable/artifact/insufficient OK
+
+== E: Gate-logic primitives (confidence cap + label boundaries) ==
+   gate primitives: single-lap cap + label/profile predicates OK
+
+== F: Legacy rule non-regression (identical AnalysisResult vectors) ==
+   legacy rules: clean/engine/pressure/slip/determinism OK
+
+== G: Vehicle DB (embedded AMS2 data, Layer 1) ==
+FAIL [test_comparison_engine.cpp:486] std::fabs(cgRt.valueM() - 0.56f) < 1e-6f
+FAIL [test_comparison_engine.cpp:490] std::fabs(cgRe.valueM() - 0.5f) < 1e-6f
+   vehicle DB: valid, 506 cars, find/case-insensitive/unknown OK
+
+== H: Engine cooling per-vehicle override (AMS2 Layer 1) ==
+   engine cooling per-car: override + info line OK
+
+== I: Brake temp per-vehicle fade window (AMS2 Layer 1) ==
+   brake temp per-car fade window OK
+
+== J: Release info (parseLatestReleaseJson / formatReleaseDate) ==
+
+-----------------------------------------------
+2/142 CHECKS FAILED

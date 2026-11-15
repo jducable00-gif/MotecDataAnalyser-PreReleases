@@ -1,4 +1,4 @@
-﻿//---------------------------------------------------------------------------
+//---------------------------------------------------------------------------
 // MotecSetupForm.h — Déclaration de la fenêtre principale (TFormMotecSetup).
 //
 // Form VCL qui orchestre l'analyse : sélection des fichiers LD/LDX,
@@ -28,7 +28,7 @@
 
 #include "LapReportGenerator.h"
 #include "VehicleDb.h"    // Ams2VehicleDb -- per-wheel brake fade thresholds (AMS2 only)
-#include "HttpServer.h"   // Phase B: embedded tablet report server
+#include "TabletPublisher.h"  // Phase B/D3: embedded tablet report server (state + publishing)
 #include "ReleaseInfo.h"  // kAppVersion + GitHub release notes fetch (WinHTTP)
 #include <atomic>
 #include <mutex>
@@ -301,7 +301,13 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
     bool  liveEvoPitReportDone = false; // prevents repeated generateLiveReport() while parked in pits
     int32_t prevCurrentLapEvo = -1;   // previous gfx.current_lap for restart detection
 
+    // --- Race-end report (race mode only) -----------------------------------
+    enum LiveSessionType { LST_UNKNOWN = 0, LST_PRACTICE_LIKE = 1, LST_RACE = 2 };
+    LiveSessionType liveSessionType       = LST_UNKNOWN;   // set at connect (EVO static page) or first frame per profile
+    bool            liveRaceEndReportDone = false;         // one-shot: race-end report already generated this session
+
     // --- AMS2 State Tracking (for event detection) ---
+    int lastAms2OwnRaceState = -1;  // previous mRaceStates[viewed participant] for race-end transition (-1 = none yet)
     int lastPitMode = -1;           // To detect pit exit and teleport transitions
     unsigned int lastCompletedLaps = 0; // The value from the game's mCompletedLaps field
     unsigned int sessionLapCounter = 0;  // Our internal counter that resets on pit entry/exit
@@ -309,6 +315,7 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
     bool firstLapStarted = false;
 
     int lastPitStateR3e       = -1;   // R3E pit_state (-1 N/A / 0 none ..) — transition tracker for lap finalization
+    int lastSessionPhaseR3e   = -1;   // R3E session_phase (GARAGE=1..GREEN=5/CHECKERED=6/-1 N/A) — race-end transition tracker
     int lastCompletedLapsR3e = -1;     // previous player.completed_laps (RaceRoom lap boundary); -1 = none yet
     bool liveWasOnTrackR3e = false;   // pit->track transition detection for RaceRoom + FPS display (plan §6) ---
     double    liveLastNewFrameMs   = 0.0; // GetTickCount64() ms of last accepted NewFrame (for Hz measurement); 0 = none yet
@@ -329,8 +336,8 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
     double    liveSessionStartMs   = 0.0;   // GetTickCount64() ms when this collection's first frame was seen (for "over S s"); 0 = none yet
 
     // --- Tablet Report Server (Phase B) ---
-    TabletReportServer _tabletServer{8765};   // default port; overridden by INI at startup
-    int tabletVersion_ = 1;                   // incremented per analysis pass, embedded in JSON version field
+    TabletPublisher _tablet{8765};        // tablet report server state + payload publishing (default 8765, INI overrides)
+
 };
 
 extern PACKAGE TFormMotecSetup *FormMotecSetup;

@@ -1,0 +1,43 @@
+=== PMR Gate 2: socket layer self-test ===
+--- S1: bind failure on occupied port ---
+   (expected failure: bind() to *:7590 failed with error code 10048)
+--- S2-S5: open, drain loop at ~10 Hz, verify decode, stop sender ---
+   raceInfo 84 B
+   participant 100 B
+   telemetry 968 B
+   sender thread started -> 127.0.0.1:7590
+   [tick  1] drained= 12  total=  12
+   [tick  2] drained= 12  total=  24
+   [tick  3] drained=  9  total=  33
+   [tick  4] drained= 12  total=  45
+   [tick  5] drained=  9  total=  54
+   [tick  6] drained= 12  total=  66
+   [tick  7] drained=  9  total=  75
+   [tick  8] drained= 12  total=  87
+   [tick  9] drained=  9  total=  96
+   [tick 10] drained= 12  total= 108
+   [tick 11] drained=  9  total= 117
+   [tick 12] drained= 12  total= 129
+   [tick 13] drained=  9  total= 138
+   [tick 14] drained= 12  total= 150
+   [tick 15] drained=  9  total= 159
+   [tick 16] drained= 12  total= 171
+   [tick 17] drained=  9  total= 180
+   [tick 18] drained= 12  total= 192
+   [tick 19] drained=  9  total= 201
+   [tick 20] drained= 12  total= 213
+   [tick 21] drained=  9  total= 222
+   [tick 22] drained= 12  total= 234
+   [tick 23] drained=  9  total= 243
+   [tick 24] drained= 12  total= 255
+   [tick 25] drained=  9  total= 264
+   [tick 26] drained= 12  total= 276
+   [tick 27] drained=  9  total= 285
+   [tick 28] drained= 12  total= 297
+   [tick 29] drained=  9  total= 306
+   [tick 30] drained= 12  total= 318
+   after stop: flushed 0, then draining idle...
+   idle drains took 0 ms total
+--- S6: close / re-open lifecycle ---
+===========================================
+ALL TESTS PASSED
