@@ -222,6 +222,13 @@
         <None Include="LapReportGenerator.h">
             <BuildOrder>8</BuildOrder>
         </None>
+        <CppCompile Include="LdEncoder.cpp">
+            <DependentOn>LdEncoder.h</DependentOn>
+            <BuildOrder>38</BuildOrder>
+        </CppCompile>
+        <None Include="LdEncoder.h">
+            <BuildOrder>39</BuildOrder>
+        </None>
         <CppCompile Include="LiveChannelResolver.cpp">
             <DependentOn>LiveChannelResolver.h</DependentOn>
             <BuildOrder>19</BuildOrder>
@@ -295,6 +302,13 @@
         <None Include="RuleConfig.h">
             <BuildOrder>4</BuildOrder>
         </None>
+        <CppCompile Include="SessionRecorder.cpp">
+            <DependentOn>SessionRecorder.h</DependentOn>
+            <BuildOrder>40</BuildOrder>
+        </CppCompile>
+        <None Include="SessionRecorder.h">
+            <BuildOrder>41</BuildOrder>
+        </None>
         <CppCompile Include="TabletPublisher.cpp">
             <DependentOn>TabletPublisher.h</DependentOn>
             <BuildOrder>36</BuildOrder>
@@ -334,8 +348,8 @@
         <None Include="VehicleDbRow.h">
             <BuildOrder>28</BuildOrder>
         </None>
-        <FormResources Include="MotecSetupForm.dfm"/>
         <FormResources Include="MotecSettingsForm.dfm"/>
+        <FormResources Include="MotecSetupForm.dfm"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

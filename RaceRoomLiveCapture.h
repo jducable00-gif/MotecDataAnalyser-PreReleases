@@ -30,7 +30,8 @@ void R3eCloseSharedMemory();    // idempotent UnmapViewOfFile/CloseHandle; safe 
 // Feed one frame into LapStats accumulators: builds a raw channel dictionary and lets
 // LiveChannel::FeedLapFromTable() apply mapping.json factor/offset per row, then adds the
 // post-table derived samples (damper travel stats, handling sample, steer/yaw correlation).
-void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds);
+class SessionRecorder;   // optional high-frequency sample buffer for LD export (SessionRecorder.h)
+void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds, SessionRecorder* rec = nullptr);
 
 std::string R3eGetChannelTableWarning();   // one-time table-validation report; empty when clean
 

@@ -1,4 +1,4 @@
-//---------------------------------------------------------------------------
+﻿//---------------------------------------------------------------------------
 // MotecSetupForm.cpp — Implémentation de la fenêtre principale.
 //
 // Contient :
@@ -27,6 +27,7 @@
 #include <vector>
 
 #include <thread>
+#
 #include "MotecSetupForm.h"
 #include "MotecToCSV.h"
 #include "RuleConfig.h"
@@ -123,7 +124,12 @@ static std::string WideStringToUtf8(const String& w)
 	RawByteString utf8 = UTF8Encode(w);   // bytes UTF-8 ; le buffer interne vit tant que utf8 est vivant
 	const char* p = static_cast<const char*>(utf8.c_str());
 	return std::string(p, static_cast<std::size_t>(utf8.Length()));
+
 }
+
+// Convert a UTF-8 std::string to VCL String (inverse of WideStringToUtf8) via the RTL RawByteString + UTF8Decode pair - no extra header needed.
+
+static String Utf8ToVcl(const std::string& s) { if (s.empty()) return ""; RawByteString utf8(s.c_str(), static_cast<int>(s.size())); return UTF8Decode(utf8); }
 
 String DefaultMotecFolder()
 {
@@ -524,6 +530,27 @@ void SaveLiveCaptureSetting(bool enabled)
 		delete settings;
 	}
 }
+
+bool ReadGenerateMoTecFileSetting()
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		return settings->ReadInteger("General", "GenerateMoTecFile", 0) != 0;
+	} __finally {
+		delete settings;
+	}
+}
+
+void SaveGenerateMoTecFileSetting(bool on)
+{
+	TIniFile* settings = new TIniFile(SettingsFilePath());
+	try {
+		settings->WriteInteger("General", "GenerateMoTecFile", on ? 1 : 0);
+	} __finally {
+		delete settings;
+	}
+}
+
 // ===============================
 // Thresholds configuration
 // ===============================
@@ -1079,6 +1106,9 @@ __fastcall TFormMotecSetup::TFormMotecSetup(TComponent* Owner)
 	} else if (LiveCaptureCheckBox != NULL) {
         LiveCaptureCheckBox->Checked = false;
     }
+
+	if (ReadGenerateMoTecFileSetting())
+		ApplyGenerateMoTecFileSetting(true);   // restore persisted export toggle: start buffering from process start
 
 	// --- Release info : version dynamique + notes de release GitHub ---------
 	if (StatusBar1 && StatusBar1->Panels->Count >= 2)
@@ -2897,6 +2927,23 @@ void __fastcall TFormMotecSetup::LiveCaptureCheckBoxClick(TObject *Sender)
 }
 
 
+// --- MoTeC .ld export toggle -- now driven by the settings form (General tab)
+void TFormMotecSetup::ApplyGenerateMoTecFileSetting(bool on)
+{
+    if (LiveRecordingLabel == NULL) return;
+
+    if (on) {
+        // Start recording from this moment. Clear any stale buffer so the exported file only contains samples captured while enabled.
+        liveSessionRecorder.enable();
+        liveSessionRecorder.clear();
+        LiveRecordingLabel->Visible = true;
+    } else {
+        // Stop buffering and discard accumulated data (plan section 4).
+        liveSessionRecorder.disable();
+        liveSessionRecorder.clear();
+        LiveRecordingLabel->Visible = false;
+    }
+}
 
 void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
 {
@@ -3004,7 +3051,8 @@ void __fastcall TFormMotecSetup::LiveConnectTimerTimer(TObject *Sender)
         }
         else if (liveMode == LIVE_PMR)
         {
-            liveTrackName.clear(); // refreshed from RaceInfo packets as they arrive
+            liveTrackName.clear();
+	liveVehicleName.clear(); // refreshed from RaceInfo packets as they arrive
             String pmrAddr = ReadPmrBindAddressSetting().Trim();
             String pmrWhere = pmrAddr.IsEmpty() ? "all interfaces" : ("*" + pmrAddr);
             MemoSummary->Lines->Add(isFrConn3 ? (String(L"En direct : \u00e9coute en UDP sur ") + pmrWhere + L":" + IntToStr(ReadPmrPortSetting()) + L". En attente de t\u00e9l\u00e9m\u00e9trie...") : ("Live: PMR UDP listening on " + pmrWhere + ":" + IntToStr(ReadPmrPortSetting()) + ". Waiting for telemetry..."));
@@ -3451,6 +3499,7 @@ void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
 		MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + "RaceRoom");
 
 		pushLiveStatusToTablet("RaceRoom", trackName, 0);
+            liveSessionRecorder.recordBeacon(GetTickCount64()); // LD export: lap boundary marker (plan section 5)
 		sessionLapCounter = 0;
 		lastCompletedLapsR3e = frame.completed_laps >= 0 ? (int)frame.completed_laps : -1;
 		firstLapStarted = false;
@@ -3473,6 +3522,7 @@ void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
 			liveCurrentLap.lapNumber  = liveLapNumber;
 			liveCurrentLap.startTime  = (double)GetTickCount64() / 1000.0;
 			liveCurrentLap.vehicleName = "RaceRoom";
+			liveVehicleName = "RaceRoom";
 			std::string trackName2 = frame.track_name[0] != 0 ? std::string((const char*)frame.track_name) : "";
 			if (!trackName2.empty()) liveCurrentLap.trackName = trackName2;
 
@@ -3505,7 +3555,7 @@ void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
 	// Feed raw values into the current lap via mapping.json LIVE rows.
 	if (onTrack && liveLapInProgress) {
 		double timeSeconds = HighResClockSeconds();
-		R3eFeedLap(liveCurrentLap, frame, timeSeconds);
+		R3eFeedLap(liveCurrentLap, frame, timeSeconds, &liveSessionRecorder);
 	}
 
 	// Race-end report: classify session type from shared memory; race mode only triggers the one-shot finalization.
@@ -3577,6 +3627,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
 		if (frame.mCarName[0])
 			MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, true) + displayVehicleName(std::string(frame.mCarName)));
 		pushLiveStatusToTablet(std::string(frame.mCarName), std::string(frame.mTrackLocation), 0);
+            liveSessionRecorder.recordBeacon(GetTickCount64()); // LD export: lap boundary marker (plan section 5)
 		sessionLapCounter = 0;
 		lastCompletedLaps = frame.mParticipantInfo[frame.mViewedParticipantIndex].mLapsCompleted;
 		firstLapStarted = false;
@@ -3603,6 +3654,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
             liveCurrentLap.lapNumber = liveLapNumber;
             liveCurrentLap.startTime = (double)GetTickCount64() / 1000.0;
             liveCurrentLap.vehicleName = frame.mCarName;
+            liveVehicleName = std::string(frame.mCarName);
             liveCurrentLap.trackName = frame.mTrackLocation;
 
 			MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
@@ -3643,7 +3695,7 @@ void __fastcall TFormMotecSetup::processLiveFrame(const Ams2SharedMemory& frame)
     if (onTrack && liveLapInProgress)
     {
         double timeSeconds = HighResClockSeconds();
-		Ams2FeedLap(liveCurrentLap, frame, timeSeconds);
+		Ams2FeedLap(liveCurrentLap, frame, timeSeconds, &liveSessionRecorder);
     }
 
 	// Race-end report: classify session type from shared memory (first valid frame wins). RACE is the only race-like mode.
@@ -3706,6 +3758,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         liveCurrentLap.lapNumber = liveLapNumber;
         liveCurrentLap.startTime = (double)GetTickCount64() / 1000.0;
         liveCurrentLap.vehicleName = gfx.car_model;
+        liveVehicleName = std::string(gfx.car_model);
         liveCurrentLap.trackName = liveTrackName;
 
         // Seed npos so the wrap detector doesn't fire on this same frame:
@@ -3720,6 +3773,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
         if (!liveTrackName.empty())
             MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(liveTrackName));
         pushLiveStatusToTablet(std::string(gfx.car_model), liveTrackName, liveLapNumber);
+            liveSessionRecorder.recordBeacon(GetTickCount64()); // LD export: lap boundary marker (plan section 5)
         MemoSummary->Lines->Add("Lap " + IntToStr(liveLapNumber) + " started.");
 		//StatusBar1->SimpleText = "Live: Lap " + IntToStr(liveLapNumber) + " in progress";
     }
@@ -3767,7 +3821,7 @@ void __fastcall TFormMotecSetup::processLiveFrameEVO(const SPageFilePhysics& phy
     {
         double timeSeconds = HighResClockSeconds();   // QPC: GetTickCount64's ~15 ms resolution compressed damper velocities toward zero
         if (physUsable)
-            AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds);
+            AcsEvoFeedLap(liveCurrentLap, phys, gfx, timeSeconds, &liveSessionRecorder);
         liveEvoPrevNPos = gfx.npos;   // track npos only while feeding a lap on-track
     }
 
@@ -3838,6 +3892,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         std::string driverName = PmrGetDriverName(playerId);
         if (!driverName.empty())
             liveCurrentLap.vehicleName = driverName;
+        liveVehicleName = driverName;
         liveCurrentLap.trackName  = liveTrackName;
 
         // PMR UDP feed has no car model: driver name is the vehicle identity.
@@ -3846,6 +3901,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         if (!liveTrackName.empty())
             MemoSummary->Lines->Add(liveNameLabel(ReadReportLanguageSetting() == ReportLanguage::French, false) + liveNameUtf8(liveTrackName));
         pushLiveStatusToTablet(driverName, liveTrackName, liveLapNumber);
+            liveSessionRecorder.recordBeacon(GetTickCount64()); // LD export: lap boundary marker (plan section 5)
         MemoSummary->Lines->Add("PMR Lap " + IntToStr(liveLapNumber) + " started.");
     }
 
@@ -3885,7 +3941,7 @@ void __fastcall TFormMotecSetup::processLiveFramePmir()
         const PmrVehicleTelemetryPacket* pkt = PmrLastTelemetry();
         if (pkt != nullptr) {
             double timeSeconds = HighResClockSeconds();   // QPC: consistent with EVO/AMS2 feed timestamps
-            PmrFeedLap(liveCurrentLap, *pkt, timeSeconds);
+            PmrFeedLap(liveCurrentLap, *pkt, timeSeconds, &liveSessionRecorder);
         }
     }
 
@@ -3962,6 +4018,80 @@ void __fastcall TFormMotecSetup::generateLiveReport()
         PageControlReport->ActivePage = TabSummary;
 
     //StatusBar1->SimpleText = "Live capture complete — " + IntToStr((int)liveLaps.size()) + " laps";
+
+	// LD export (plan_live_export_ld) — write .ld + companion .ldx when toggle is on and samples exist.
+if (liveSessionRecorder.enabled() && liveSessionRecorder.hasSamples()) {
+	    // Profile string for the Exports sub-folder.
+	    std::string profileStr;
+	    switch ((ChannelProfile)ChannelProfileCombo->ItemIndex) {
+	        case ChannelProfile::AMS2:   profileStr = "AMS2"; break;
+	        case ChannelProfile::EvoM1:  profileStr = "EvoM1"; break;
+	        case ChannelProfile::Pmr:    profileStr = "PMR";  break;
+	        default:                     profileStr = "RaceRoom"; break;
+	    }
+
+	    // Sanitize a filename part: strip illegal chars, trim trailing space/dot, cap at 40.
+	    auto sanitizePart = [](std::string s) -> std::string {
+	        for (auto& c : s) if (c=='/'||c=='\\'||c==':'||c=='*'||c=='?'||c=='"'||c=='<'||c=='>'||c=='|') c='_';
+	        while (!s.empty() && (s.back() == ' ' || s.back() == '.')) s.pop_back();
+	        if ((int)s.size() > 40) s.resize(40);
+	        return s;
+	    };
+
+	    std::string vehiclePart = sanitizePart(liveVehicleName.empty() ? "Unknown" : liveVehicleName);
+	    std::string trackPart   = sanitizePart(liveTrackName.empty()    ? "Unknown"  : liveTrackName);
+
+	    // Timestamp: YYYYMMDD_HHNN from current local time.
+	    String tsStr       = FormatDateTime("yyyymmdd_hhnn", Now());
+	    std::string timestampPart = WideStringToUtf8(tsStr);
+
+	    // Session type: live capture doesn't expose a race/practice flag — use "Live".
+	    std::string baseName = vehiclePart + "_" + trackPart + "_Live_" + timestampPart;
+
+	    // Build output path: <AppDir>/Exports/<Profile>/<base>.ld (+ .ldx).
+	    std::string dir     = WideStringToUtf8(AppDirPath()) + "\\Exports\\" + profileStr;
+	    EnsurePathExists(dir);   // create Exports/<Profile>/ if missing.
+
+	    // Map recorder channels to LdChannelData (insertion order == export order).
+	    std::vector<LdChannelData> ldChannels;
+	    for (const auto& ch : liveSessionRecorder.channels()) {
+	        if (ch.samples.empty()) continue;   // skip empty channels — encoder requires non-empty values.
+	        LdChannelData lcd;
+	        lcd.name        = ch.name.size() > 32 ? std::string(ch.name, 0, 32) : ch.name;
+	        lcd.unit        = ch.unit.size() > 8  ? std::string(ch.unit, 0, 8)   : ch.unit;
+	        lcd.frequencyHz = ch.estimatedFrequencyHz();
+	        lcd.values      = ch.samples;       // copy — recorder is cleared after export below.
+	        ldChannels.push_back(std::move(lcd));
+	    }
+
+	    if (!ldChannels.empty()) {
+	        LdExportOptions opts;
+	        opts.vehicleName = liveVehicleName.size() > 128 ? std::string(liveVehicleName, 0, 128) : liveVehicleName;
+	        opts.trackName   = liveTrackName.size()   > 128 ? std::string(liveTrackName,   0, 128) : liveTrackName;
+	        // Driver name: use the last lap's driver if available (PMR sets it per-lap).
+	        if (!liveLaps.empty()) {
+	            const auto& last = liveLaps.back();
+	            opts.driverName  = last.driverName.size() > 64 ? std::string(last.driverName, 0, 64) : last.driverName;
+	        }
+
+	        std::string ldPath  = dir + "\\" + baseName + ".ld";
+	        std::string ldxPath = dir + "\\" + baseName + ".ldx";
+
+	        bool ok = WriteLdFile(ldPath, opts, ldChannels);
+	        if (ok) {
+	            // Companion .ldx with beacon markers.
+	            const auto& beaconsRef  = liveSessionRecorder.beacons();
+	            std::vector<int64_t> beaconsUs(beaconsRef.begin(), beaconsRef.end());
+	            WriteLdxBeacons(ldxPath, beaconsUs);
+
+	            // Status bar feedback + clear buffer (plan: reset after export).
+	            StatusBar1->SimpleText = "LD exported: " + Utf8ToVcl(baseName) + ".ld (" + IntToStr((int)liveSessionRecorder.channelCount()) + " channels)";
+	            liveSessionRecorder.clear();   // free memory; next session starts fresh.
+	        } else {
+	            StatusBar1->SimpleText = "LD export FAILED (disk write error): " + Utf8ToVcl(baseName) + ".ld";
+	        }
+	    }
+	}
 }
 
 // Phase B2: live pit-exit status for the tablet - car/track/lap appear as soon as

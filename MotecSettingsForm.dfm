@@ -2,7 +2,7 @@ object FormMotecSettings: TFormMotecSettings
   Left = 0
   Top = 0
   Caption = 'Threshold Settings'
-  ClientHeight = 500
+  ClientHeight = 576
   ClientWidth = 600
   Color = clWhite
   Font.Charset = DEFAULT_CHARSET
@@ -17,7 +17,7 @@ object FormMotecSettings: TFormMotecSettings
     Left = 8
     Top = 8
     Width = 584
-    Height = 430
+    Height = 508
     ActivePage = TabSuspension
     TabHeight = 25
     TabOrder = 0
@@ -85,30 +85,45 @@ object FormMotecSettings: TFormMotecSettings
           Text = '1.3'
         end
       end
-       object GroupUpdates: TGroupBox
-         Left = 21
-         Top = 305
-         Width = 552
-         Height = 84
-         Caption = 'Update Feed'
-         TabOrder = 2
-         object ChkPreReleaseUpdates: TCheckBox
-           Left = 16
-           Top = 30
-           Width = 400
-           Height = 17
-           Caption = 'Receive pre-releases (testers)'
-           TabOrder = 0
-         end
-         object LblPrereleaseHint: TLabel
-           Left = 16
-           Top = 54
-           Width = 520
-           Height = 15
-           Caption = 'The update feed switches to the Pre-Releases repository.'
-         end
-       end
-
+      object GroupUpdates: TGroupBox
+        Left = 21
+        Top = 305
+        Width = 552
+        Height = 84
+        Caption = 'Update Feed'
+        TabOrder = 2
+        object LblPrereleaseHint: TLabel
+          Left = 16
+          Top = 54
+          Width = 295
+          Height = 15
+          Caption = 'The update feed switches to the Pre-Releases repository.'
+        end
+        object ChkPreReleaseUpdates: TCheckBox
+          Left = 16
+          Top = 30
+          Width = 400
+          Height = 17
+          Caption = 'Receive pre-releases (testers)'
+          TabOrder = 0
+        end
+      end
+      object GroupGenerateMoTeCFile: TGroupBox
+        Left = 21
+        Top = 397
+        Width = 552
+        Height = 46
+        Caption = 'Live MoTeC File Export'
+        TabOrder = 3
+        object ChkGenerateMoTeCFile: TCheckBox
+          Left = 12
+          Top = 14
+          Width = 500
+          Height = 17
+          Caption = 'Record a .ldx file during live capture (full session)'
+          TabOrder = 0
+        end
+      end
     end
     object TabTyre: TTabSheet
       Caption = 'Tyre'
@@ -615,7 +630,7 @@ object FormMotecSettings: TFormMotecSettings
   end
   object ButtonSave: TButton
     Left = 384
-    Top = 450
+    Top = 516
     Width = 90
     Height = 37
     Caption = 'Save'
@@ -624,7 +639,7 @@ object FormMotecSettings: TFormMotecSettings
   end
   object ButtonCancel: TButton
     Left = 486
-    Top = 450
+    Top = 516
     Width = 90
     Height = 37
     Caption = 'Cancel'

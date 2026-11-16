@@ -64,8 +64,9 @@ void AcsEvoCloseSharedMemory();
 // table-driven feed apply factor/offset per row; multi-value derived samples
 // (damper velocity, handling sample, steer/yaw) stay post-table by design.
 // timeSeconds is the wall-clock time (GetTickCount64()/1000.0).
+class SessionRecorder;   // optional high-frequency sample buffer for LD export (SessionRecorder.h)
 void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
-                   const SPageFileGraphicEvo& gfx, double timeSeconds);
+                   const SPageFileGraphicEvo& gfx, double timeSeconds, SessionRecorder* rec = nullptr);
 
 // Returns a non-empty warning string if any EVOM1 LIVE mapping row failed to
 // resolve at startup (empty table or missing raw channel names). Empty = OK.

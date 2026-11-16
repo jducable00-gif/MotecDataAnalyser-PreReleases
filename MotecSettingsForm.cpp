@@ -25,6 +25,8 @@ extern int    ReadWebServerPort();
 extern void   SaveWebServerPort(int port);
 extern int    ReadPreReleaseUpdatesSetting();
 extern void   SavePreReleaseUpdatesSetting(bool pre);
+extern bool ReadGenerateMoTecFileSetting();
+extern void SaveGenerateMoTecFileSetting(bool on);
 
 
 // Access to global thresholds and helper functions from other units
@@ -92,7 +94,8 @@ void TFormMotecSettings::LoadFromThresholds()
     EditMinValidLapTime->Text = FloatToStr(g_thresholds.minValidLapTimeMultiplier);
     EditMaxValidLapTime->Text = FloatToStr(g_thresholds.maxValidLapTimeMultiplier);
 
-    ChkPreReleaseUpdates->Checked = (ReadPreReleaseUpdatesSetting() != 0);   // [General] feed pre-release
+    ChkPreReleaseUpdates->Checked = (ReadPreReleaseUpdatesSetting() != 0);
+    ChkGenerateMoTeCFile->Checked = ReadGenerateMoTecFileSetting();   // [General] live MoTeC-file export
 
     // Pressure (psi)
     EditPressLow->Text = FloatToStr(g_thresholds.pressureLowPsi);
@@ -292,7 +295,10 @@ void __fastcall TFormMotecSettings::ButtonSaveClick(TObject *Sender)
         // Live-apply: start/stop the server immediately without restarting.
         FormMotecSetup->ApplyWebServerSettings();
 
-        SavePreReleaseUpdatesSetting(ChkPreReleaseUpdates->Checked);   // [General] persiste le choix de feed (re-fetch cote form principale)
+        SavePreReleaseUpdatesSetting(ChkPreReleaseUpdates->Checked);
+        // Live MoTeC-file export (General tab): persist, then apply immediately on the main form.
+        SaveGenerateMoTecFileSetting(ChkGenerateMoTeCFile->Checked);
+        FormMotecSetup->ApplyGenerateMoTecFileSetting(ChkGenerateMoTeCFile->Checked);   // [General] persiste le choix de feed (re-fetch cote form principale)
 
         ModalResult = mrOk;
     } catch (...) {
@@ -311,6 +317,14 @@ void __fastcall TFormMotecSettings::ChkWebServerEnabledClick(TObject *Sender)
     UpdateWebUrlLabel();   // refresh the tablet URL label on enable/disable toggle
     SaveWebServerEnabled(ChkWebServerEnabled->Checked);
     FormMotecSetup->ApplyWebServerSettings();
+}
+
+// Phase D-style live toggle (no Save needed): persist the MoTeC-file export flag and apply it
+// immediately on the main form, mirroring ChkWebServerEnabledClick.
+void __fastcall TFormMotecSettings::ChkGenerateMoTeCFileClick(TObject *Sender)
+{
+    SaveGenerateMoTecFileSetting(ChkGenerateMoTeCFile->Checked);
+    FormMotecSetup->ApplyGenerateMoTecFileSetting(ChkGenerateMoTeCFile->Checked);
 }
 
 void TFormMotecSettings::UpdateWebUrlLabel()
@@ -356,6 +370,8 @@ void TFormMotecSettings::TranslateUI()
     LblMaxValidLapTime->Caption = isFr ? "Temps max. tour valide (x meilleur):" : "Max Valid Lap Time (x best):";
     ChkPreReleaseUpdates->Caption = isFr ? "Recevoir aussi les versions pré-release (testeurs)" : "Also receive pre-releases (testers)";
     LblPrereleaseHint->Caption   = isFr ? "Le self-update regarde aussi le dépôt Pre-Releases ; la version installable la plus récente gagne." : "The update check also looks at the Pre-Releases repository; the newest installable version wins.";
+    GroupGenerateMoTeCFile->Caption = isFr ? "Export MoTeC en direct" : "Live MoTeC File Export";
+    ChkGenerateMoTeCFile->Caption   = isFr ? "Générer un fichier .ldx pendant la capture live (session complète)" : "Record a .ldx file during live capture (full session)";
 
     GroupTyrePressure->Caption = isFr ? "Pression (psi)" : "Pressure (psi)";
     LblPressLow->Caption = isFr ? "Minimum :" : "Low:";

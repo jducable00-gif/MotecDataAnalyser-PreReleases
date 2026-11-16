@@ -18,6 +18,7 @@
 #include <cstring>
 #include "AcsEvoLiveCapture.h"
 #include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
+#include "SessionRecorder.h"       // optional high-frequency sample buffer for LD export
 
 // ---------------------------------------------------------------------------
 // Shared memory handles (module-level, single instance)
@@ -526,7 +527,7 @@ bool AcsEvoIsInPits(const SPageFileGraphicEvo& gfx)
 // ---------------------------------------------------------------------------
 
 void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
-                   const SPageFileGraphicEvo& gfx, double timeSeconds)
+                   const SPageFileGraphicEvo& gfx, double timeSeconds, SessionRecorder* rec)
 {
     LiveChannel::ResolvedChannelTable& table = AcsEvoGetChannelTable();
 
@@ -589,6 +590,7 @@ void AcsEvoFeedLap(LapStats& lap, const SPageFilePhysics& phys,
     raw["graphics.tyre_rr.temp_center"]  = gfx.tyre_rr.tyre_temperature_center;
     raw["graphics.tyre_rr.temp_right"]   = gfx.tyre_rr.tyre_temperature_right;
 
+    if (rec) rec->feed(table, raw, timeSeconds);   // LD export buffer (optional)
     // --- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
     lap.rideHeightUnit = RideHeightUnit::Centimeters;   // aeroHeight0/1 arrive in cm (table x10 from m) - identical to old C++ path

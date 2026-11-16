@@ -36,6 +36,8 @@ __published:
     TEdit *EditMaxValidLapTime;
     TCheckBox *ChkPreReleaseUpdates;   // [General] feed pre-release de self-update
     TLabel *LblPrereleaseHint;         // [General] aide sous la case pre-release
+    TGroupBox *GroupGenerateMoTeCFile;
+    TCheckBox *ChkGenerateMoTeCFile;
 
     // Tyre Tab
     TGroupBox *GroupTyrePressure;
@@ -132,6 +134,8 @@ __published:
     void __fastcall EditPmrBindAddressChange(TObject *Sender);
     void __fastcall EditPmrBindAddressEnter(TObject *Sender);
     void __fastcall EditPmrBindAddressLeave(TObject *Sender);
+    // DFM-referenced handler (VCL streaming): live MoTeC-file export toggle on the General tab.
+    void __fastcall ChkGenerateMoTeCFileClick(TObject *Sender);
 
 private:
     bool pmrAddrShowingPlaceholder = false;  // true while the gray "127.0.0.1" hint stands for an empty value

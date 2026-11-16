@@ -186,7 +186,8 @@ bool PmrIsConnected();                                    // socket open and bou
 // ===============================
 // Phase 3 — feed + session metadata accessors
 // ===============================
-void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double timeSeconds);
+class SessionRecorder;   // optional high-frequency sample buffer for LD export (SessionRecorder.h)
+void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double timeSeconds, SessionRecorder* rec = nullptr);
 
 // Returns a non-empty warning string if any PMR LIVE mapping row failed to resolve at startup
 // (empty table or missing raw channel names). Empty = OK. Mirrors AcsEvoGetChannelTableWarning().

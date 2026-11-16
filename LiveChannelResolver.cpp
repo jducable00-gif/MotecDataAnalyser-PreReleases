@@ -398,6 +398,8 @@ void ResolvedChannelTable::build(ChannelProfile p) {
         rc.addValue = sink;                                          // null when the alias has no LapStats field — reported below
         rc.factor   = cm.factor;
         rc.offset   = cm.offset;
+        rc.alias    = cm.alias;                 // semantic label for the LD export (i2 channel name)
+        rc.unit     = cm.standardUnit;          // unit string written into the .ld header block
 
         // PMR dual-write: the four Suspension_Travel_* aliases also seed damper*.addSample().
         if (p == ChannelProfile::Pmr && sink != 0) {

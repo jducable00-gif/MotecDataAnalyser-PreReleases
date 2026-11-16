@@ -62,6 +62,20 @@ object FormMotecSetup: TFormMotecSetup
     Font.Style = []
     ParentFont = False
   end
+  object LiveRecordingLabel: TLabel
+    Left = 680
+    Top = 31
+    Width = 21
+    Height = 15
+    Caption = 'REC'
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = clRed
+    Font.Height = -12
+    Font.Name = 'Segoe UI'
+    Font.Style = []
+    ParentFont = False
+    Visible = False
+  end
   object DamperLayoutTabs: TPageControl
     Left = 600
     Top = 88

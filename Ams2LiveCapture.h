@@ -41,7 +41,8 @@ void Ams2CloseSharedMemory();
 // them through LiveChannel::FeedLapFromTable().
 // timeSeconds is the wall-clock time (GetTickCount64()/1000.0) used for
 // damper velocity derivation.
-void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds);
+class SessionRecorder;   // optional high-frequency sample buffer for LD export (SessionRecorder.h)
+void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds, SessionRecorder* rec = nullptr);
 
 // Returns a human-readable warning string if any AMS2 LIVE mapping rows failed to
 // resolve (empty table or aliases without a LapStats sink). Empty when healthy.

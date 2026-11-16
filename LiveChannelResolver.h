@@ -51,6 +51,8 @@ struct ResolvedChannel {
     DamperSampleSink damperAddSample = 0;// optional dual-write for suspension travel
     double factor = 1.0;                 // v_std = raw * factor + offset
     double offset = 0.0;
+    std::string alias;                   // semantic name ("Vehicle_Speed") — LD export channel label
+    std::string unit;                    // standardUnit from mapping.json — written into the .ld header for i2 display
 };
 
 // Pre-resolved table, built once per capture session (at connect time).

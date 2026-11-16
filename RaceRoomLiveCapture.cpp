@@ -16,6 +16,7 @@
 #include <tlhelp32.h>
 #include "RaceRoomLiveCapture.h"
 #include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
+#include "SessionRecorder.h"       // optional high-frequency sample buffer for LD export
 
 // ---------------------------------------------------------------------------
 // Shared memory handle + frame-sync state (module-level, single instance)
@@ -211,7 +212,7 @@ std::string R3eGetChannelTableWarning()
 static const double DEG_PER_RAD = 180.0 / 3.14159265358979323846;   // local handling sample: rad/s -> deg/s (table row uses factor 57.29577951)
 static const double G = 9.81;                                       // local handling sample only — the dict carries RAW m/s^2
 
-void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds)
+void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds, SessionRecorder* rec)
 {
     LiveChannel::ResolvedChannelTable& table = R3eGetChannelTable();
 
@@ -316,6 +317,7 @@ void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds)
     if (std::isfinite(static_cast<float>(frame.steer_lock_degrees)))
         raw["steer_lock_degrees"] = static_cast<double>(frame.steer_lock_degrees);   // dict-only extra
 
+    if (rec) rec->feed(table, raw, timeSeconds);   // LD export buffer (optional)
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
 
     // --- Post-table derived samples (AMS2 parity). ---

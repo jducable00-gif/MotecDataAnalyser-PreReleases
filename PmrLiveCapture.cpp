@@ -30,6 +30,7 @@
 
 #include "PmrLiveCapture.h"
 #include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN Phase 3)
+#include "SessionRecorder.h"       // optional high-frequency sample buffer for LD export
 
 namespace pmr_detail {
 
@@ -499,7 +500,7 @@ static LiveChannel::ResolvedChannelTable& PmrGetChannelTable()
 }
 
 
-void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double timeSeconds) {
+void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double timeSeconds, SessionRecorder* rec) {
     using namespace pmr_feed;
 
     if (pkt.wheels.size() != 4) return;   // defensive: feed expects LF RF LR RR in that order — VERIFY on first capture
@@ -582,6 +583,7 @@ void PmrFeedLap(LapStats& lap, const PmrVehicleTelemetryPacket& pkt, double time
     // trackTemp / ambientTemp: PMR sends these only in RaceInfo (session start), not per frame — left empty by design (plan Step 3.5).
     // aeroHeight*: no ride-height channel on the wire -> Rake virtual channel won't resolve for PMR laps; acceptable degradation (plan Step 3.7).
 
+    if (rec) rec->feed(table, raw, timeSeconds);   // LD export buffer (optional)
     // ---- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
 

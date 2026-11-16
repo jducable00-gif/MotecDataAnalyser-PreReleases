@@ -15,6 +15,7 @@
 #include <tlhelp32.h>
 #include "Ams2LiveCapture.h"
 #include "LiveChannelResolver.h"   // JSON-table-driven channel feed (LIVE_CAPTURE_JSON_MIGRATION_PLAN)
+#include "SessionRecorder.h"       // optional high-frequency sample buffer for LD export
 
 // ---------------------------------------------------------------------------
 // Shared memory handle + frame-sync state (module-level, single instance)
@@ -223,7 +224,7 @@ static LiveChannel::ResolvedChannelTable& Ams2GetChannelTable()
     return table;
 }
 
-void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds)
+void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSeconds, SessionRecorder* rec)
 {
     LiveChannel::ResolvedChannelTable& table = Ams2GetChannelTable();
 
@@ -272,6 +273,7 @@ void Ams2FeedLap(LapStats& lap, const Ams2SharedMemory& frame, double timeSecond
         raw["mBrakeBias"]         = frame.mBrakeBias;                 // 0..1 -> % x100 via table
     raw["mCarFlags_TCS"]          = (frame.mCarFlags & CAR_TCS) ? 1.0 : 0.0;   // synthetic bit-flag channel (TCS_Active)
     raw["mAntiLockActive"]        = frame.mAntiLockActive ? 1.0 : 0.0;         // bool -> numeric (ABS_Active)
+    if (rec) rec->feed(table, raw, timeSeconds);   // LD export buffer (optional)
     // --- Generic table-driven feed: v = raw * factor + offset -> LapStats sink. ---
     LiveChannel::FeedLapFromTable(lap, raw, table, timeSeconds);
     lap.rideHeightUnit = RideHeightUnit::Millimeters;   // aeroHeight* now arrive in mm (table x10 from cm) - downstream Rake identical to old cm+Centimeters path

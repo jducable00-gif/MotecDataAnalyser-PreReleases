@@ -1,10 +1,10 @@
 //---------------------------------------------------------------------------
-// MotecSetupForm.h — Déclaration de la fenêtre principale (TFormMotecSetup).
+// MotecSetupForm.h ??? D??claration de la fen??tre principale (TFormMotecSetup).
 //
-// Form VCL qui orchestre l'analyse : sélection des fichiers LD/LDX,
+// Form VCL qui orchestre l'analyse : s??lection des fichiers LD/LDX,
 // options (rapport complet, langue, profil de canaux), barre de progression
-// et affichage du rapport dans un TMemo. Les fonctions d'analyse elles-mêmes
-// sont déclarées dans MotecSetupAnalyzer.h.
+// et affichage du rapport dans un TMemo. Les fonctions d'analyse elles-m??mes
+// sont d??clar??es dans MotecSetupAnalyzer.h.
 //---------------------------------------------------------------------------
 
 #pragma once
@@ -25,6 +25,8 @@
 #include "AcsEvoLiveCapture.h"
 #include "PmrLiveCapture.h"
 #include "RaceRoomLiveCapture.h"
+#include "SessionRecorder.h"
+#include "LdEncoder.h"
 
 #include "LapReportGenerator.h"
 #include "VehicleDb.h"    // Ams2VehicleDb -- per-wheel brake fade thresholds (AMS2 only)
@@ -84,6 +86,7 @@ __published:
     TPaintBox *DamperRRPaintBox;
     TPaintBox *DamperCombinedPaintBox;
     TCheckBox *LiveCaptureCheckBox;
+    TLabel *LiveRecordingLabel;
     TLabel *LabelLiveStatus;
     TShape *LiveLed;
     TTimer *LiveTimer;
@@ -119,7 +122,7 @@ __published:
     void __fastcall ButtonAboutClick(TObject *Sender);
     void __fastcall ReleasePollTimerTimer(TObject *Sender);
 
-    // Phase 4 — Before/After comparison mode (DFM-referenced, keep in __published).
+    // Phase 4 ??? Before/After comparison mode (DFM-referenced, keep in __published).
 
 
 
@@ -136,7 +139,7 @@ public:
     __fastcall TFormMotecSetup(TComponent* Owner);
     ~TFormMotecSetup();
 
-    // Internal helpers (NOT VCL event handlers — must stay out of __published).
+    // Internal helpers (NOT VCL event handlers ??? must stay out of __published).
     void captureThreadFunc();          // dedicated capture thread worker
     void __fastcall resetLiveSession();// stop + clear live state, ready for a fresh session
     void __fastcall updateResetButtonState();  // enable/disable ButtonResetSession based on liveActive
@@ -146,17 +149,20 @@ public:
     // any control because VCL destroys components before the dtor body runs.
     void __fastcall DoFormClose(TObject *Sender, TCloseAction &Action);
 
+    // Enable/disable the MoTeC .ld export recorder (driven by settings form General tab).
+    void ApplyGenerateMoTecFileSetting(bool on);
+
     static ReportLanguage ReadReportLanguageSetting();
     bool __fastcall AnalyzeSelectedLdFile(const std::string& filePath, std::string& errorMessage);
     void __fastcall resetAnalysisGraphics();
     void __fastcall stopLiveCapture(bool isShuttingDown = false);
     void __fastcall processLiveFrame(const Ams2SharedMemory& frame);
-    // physUsable=false: the physics page failed plausibility this tick — skip feeding its values into lap data only; all gfx-based detection (pit/track state, line crossing) runs normally.
+    // physUsable=false: the physics page failed plausibility this tick ??? skip feeding its values into lap data only; all gfx-based detection (pit/track state, line crossing) runs normally.
     void __fastcall processLiveFrameEVO(const SPageFilePhysics& phys, const SPageFileGraphicEvo& gfx, bool physUsable = true);
     void __fastcall processLiveFramePmir();
     void __fastcall processLiveFrameR3e(const r3e_shared& frame);
 
-    // Frame-sync adaptive poll interval + FPS surfacing (plan §6). Call once per accepted NewFrame.
+    // Frame-sync adaptive poll interval + FPS surfacing (plan ??6). Call once per accepted NewFrame.
     // simFpsHint: authoritative sim-reported fps when available (>0), else 0 to use measured arrival rate only.
     void __fastcall updateLiveAdaptiveInterval(double simFpsHint);
 
@@ -169,7 +175,7 @@ public:
     void __fastcall DrawModernHistogram(TCanvas* canvas, int x, int y, int width, int height, const SuspensionCornerData& stats, const String& label);
     void __fastcall DrawCombinedDamperChart(Gdiplus::Graphics& graphics, int width, int height);
 
-    // Internal update helpers (NOT VCL event handlers — must stay out of __published).
+    // Internal update helpers (NOT VCL event handlers ??? must stay out of __published).
     void __fastcall UpdateTireTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateBrakeTemps(const std::vector<LapStats>& laps);
     void __fastcall UpdateSuspension(std::vector<LapStats>& laps);
@@ -186,7 +192,7 @@ public:
     TMemo*  m_aboutMemo = nullptr;
 	TButton* m_aboutUpdateBtn = nullptr;
 
-	// Self-update state — worker thread <-> UI via atomics only.
+	// Self-update state ??? worker thread <-> UI via atomics only.
 	std::atomic<int> m_updateState{0};   // 0 idle / 1 downloading / 2 restarting / 3 failed
 	std::atomic<long long> m_downloadReceived{0};
 	std::atomic<long long> m_downloadTotal{-1};
@@ -269,15 +275,15 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
                 SPageFileGraphicEvo gfx;
                 bool physUsable;
             } evo;
-            Ams2SharedMemory ams;  // AMS2 (LIVE_AMS2) — POD, copied whole from shared memory
-            r3e_shared r3e;         // RaceRoom (LIVE_R3E) — POD copy of the $R3E block (~1 KB)
+            Ams2SharedMemory ams;  // AMS2 (LIVE_AMS2) ??? POD, copied whole from shared memory
+            r3e_shared r3e;         // RaceRoom (LIVE_R3E) ??? POD copy of the $R3E block (~1 KB)
         };
         double timestampMs = 0.0;
 
-        // SPageFilePhysics has NSDMIs → non-trivial default ctor, so the union's implicit
+        // SPageFilePhysics has NSDMIs ??? non-trivial default ctor, so the union's implicit
         // default constructor is deleted (bcc32c: "variant field 'evo' has a non-trivial
         // default constructor"). A user-provided body suppresses that rule. Both capture
-        // branches assign every member before push_back, so an empty body is safe — we just
+        // branches assign every member before push_back, so an empty body is safe ??? we just
         // need the type to be default-constructible for std::vector's reallocation/copy path.
         CapturedFrame() {}
     };
@@ -292,6 +298,8 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
     double liveLapStartTime = 0.0;
     bool liveWasOnTrack = false;
     std::string liveTrackName;
+    std::string liveVehicleName; // persistent vehicle identity for LD filename (plan_live_export_ld)
+    SessionRecorder liveSessionRecorder; // high-frequency raw sample buffer for MoTeC .ld export (plan_live_export_ld)
 
     // --- PMR State Tracking (for event detection) ---
     int pmrPrevSector = -1;         // last known sector for the player vehicle (-1 = unknown / no state yet)
@@ -314,10 +322,10 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
 	float previous_mCurrentTime = 0.0;
     bool firstLapStarted = false;
 
-    int lastPitStateR3e       = -1;   // R3E pit_state (-1 N/A / 0 none ..) — transition tracker for lap finalization
-    int lastSessionPhaseR3e   = -1;   // R3E session_phase (GARAGE=1..GREEN=5/CHECKERED=6/-1 N/A) — race-end transition tracker
+    int lastPitStateR3e       = -1;   // R3E pit_state (-1 N/A / 0 none ..) ??? transition tracker for lap finalization
+    int lastSessionPhaseR3e   = -1;   // R3E session_phase (GARAGE=1..GREEN=5/CHECKERED=6/-1 N/A) ??? race-end transition tracker
     int lastCompletedLapsR3e = -1;     // previous player.completed_laps (RaceRoom lap boundary); -1 = none yet
-    bool liveWasOnTrackR3e = false;   // pit->track transition detection for RaceRoom + FPS display (plan §6) ---
+    bool liveWasOnTrackR3e = false;   // pit->track transition detection for RaceRoom + FPS display (plan ??6) ---
     double    liveLastNewFrameMs   = 0.0; // GetTickCount64() ms of last accepted NewFrame (for Hz measurement); 0 = none yet
     double    liveMeasuredHz       = 0.0; // EMA-smoothed capture rate in frames/sec (alpha=0.1)
     int32_t   liveEvoFpsAvg        = 0;   // last-seen AC EVO player_fps_avg for status display / comparison
@@ -331,7 +339,7 @@ void __fastcall pushLiveStatusToTablet(const std::string& vehicleName,
     __int64   liveEvoGfxJumps      = 0;    // total missed graphics writes since connect/reset
     double    liveEvoJumpMsgMs     = 0.0;  // GetTickCount64() ms of last jump message (throttle)
 
-    // --- Live session counters (plan §10a: "Collection rate" summary line) ---
+    // --- Live session counters (plan ??10a: "Collection rate" summary line) ---
     __int64   liveFrameCount       = 0;     // total accepted NewFrames since the current collection started
     double    liveSessionStartMs   = 0.0;   // GetTickCount64() ms when this collection's first frame was seen (for "over S s"); 0 = none yet
 
