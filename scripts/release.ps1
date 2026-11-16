@@ -49,12 +49,15 @@ try {
         throw "Commit (or stash) your work first, then re-run .\scripts\release.ps1 $tag."
     }
 
-    # NOTE: `*> $null` is required -- on a missing tag git writes to stderr, and
-    # PowerShell surfaces that as a NativeCommandError before we can check the exit code.
-    & git rev-parse --verify ("refs/tags/" + $tag) *> $null
-    if ($LASTEXITCODE -eq 0) {
-        throw "Tag '$tag' already exists. Pick a new version number."
-    }
+    # NOTE: on a missing tag git writes to stderr, which PowerShell surfaces as a
+    # NativeCommandError (even with `*> $null` in some hosts). Silence EAP around the
+    # probe and judge purely by exit code.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    & git rev-parse --verify ("refs/tags/" + $tag) | Out-Null
+    $tagExists = ($LASTEXITCODE -eq 0)
+    $ErrorActionPreference = $prevEap
+    if ($tagExists) { throw "Tag '$tag' already exists. Pick a new version number." }
 
     $relInfo = Join-Path $ProjectDir 'ReleaseInfo.h'
     if (-not (Test-Path $relInfo)) { throw "ReleaseInfo.h not found: $relInfo" }
