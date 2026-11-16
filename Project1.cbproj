@@ -348,8 +348,8 @@
         <None Include="VehicleDbRow.h">
             <BuildOrder>28</BuildOrder>
         </None>
-        <FormResources Include="MotecSettingsForm.dfm"/>
         <FormResources Include="MotecSetupForm.dfm"/>
+        <FormResources Include="MotecSettingsForm.dfm"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -33,6 +33,7 @@ LapSelectionResult selectValidLaps(const std::vector<LapStats>& laps) {
 
     // Collect positive finite lap durations (per index).
     std::vector<double> durations(laps.size(), 0.0);
+
     for (std::size_t i = 0; i < laps.size(); ++i) {
         const double d = lapDuration(laps[i]);
         if (!std::isfinite(d) || d <= 0.0)
@@ -71,6 +72,11 @@ LapSelectionResult selectValidLaps(const std::vector<LapStats>& laps) {
         if (best > 0.0 && d >= lo && d <= hi) {
             out.valid.push_back(&laps[i]);
             out.info.includedLaps.push_back(laps[i].lapNumber);
+
+            // Track the best lap among those that are actually valid (within window).
+            if (out.info.sessionBestLap < 0.0 || d < out.info.sessionBestLap) {
+                out.info.sessionBestLap = d;
+            }
         } else if (d < lo) {
             out.info.excludedLaps.push_back(
                 LapSelectionInfo::ExcludedLap{laps[i].lapNumber, d,
@@ -81,6 +87,9 @@ LapSelectionResult selectValidLaps(const std::vector<LapStats>& laps) {
                                               LapSelectionInfo::ExcludedLap::Reason::TooLong});
         }
     }
+
+    // Ensure we don't leave a negative sentinel if no valid laps were found.
+    if (out.info.sessionBestLap < 0.0) out.info.sessionBestLap = 0.0;
     return out;
 }
 
@@ -91,6 +100,7 @@ LapSelectionInfo refineSelectionInfo(const LapSelectionResult& base,
                                      const std::vector<const LapStats*>& selected) {
     LapSelectionInfo info;
     info.totalLaps = base.info.totalLaps;
+    info.sessionBestLap = base.info.sessionBestLap;
 
     std::set<int> includedSet;
     for (std::size_t i = 0; i < selected.size(); ++i) {
@@ -1023,6 +1033,13 @@ ReportResult LapReportGenerator::generate(const LapStats& lap,
         summary << (fr ? "Voiture : " : "Car: ") << displayName(carDisp) << "\n";
     }
 	summary << (fr ? "Circuit : " : "Track: ") << displayName(lap.trackName) << "\n\n";
+
+    // --- Session Best Lap ---
+    if (selection && selection->sessionBestLap > 0.0) {
+        summary << (fr ? "Meilleur tour de la session : " : "Session Best Lap: ")
+                << formatLapTime(selection->sessionBestLap) << "\n\n";
+    }
+
 
     // --- Lap selection breakdown ---
     if (selection && selection->totalLaps > 0) {

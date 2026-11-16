@@ -38,6 +38,7 @@ using ReportResult = std::map<ReportSection, SectionData>;
 struct LapSelectionInfo {
     int totalLaps = 0;                 // every lap detected in the file
     std::vector<int> includedLaps;     // lap numbers used for the average
+    double sessionBestLap = -1.0;      // fastest valid lap duration found during selection
 
     struct ExcludedLap {
         int lapNumber = 0;

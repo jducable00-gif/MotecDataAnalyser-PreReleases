@@ -3531,8 +3531,8 @@ void __fastcall TFormMotecSetup::processLiveFrameR3e(const r3e_shared& frame)
 		}
 	}
 
-	// Pit entry: first frame in pits after being on-track (pit_state 1..4 = active pit sequence).
-	if (inPits && !(lastPitStateR3e > 0 && lastPitStateR3e <= 4)) {
+	// Pit entry: transition from on-track to pits (triggers report generation).
+	if (!onTrack && liveWasOnTrackR3e) {
 		if (liveLapInProgress) {
 			liveCurrentLap.endTime = (double)GetTickCount64() / 1000.0;
 			finalizeLiveLap();
