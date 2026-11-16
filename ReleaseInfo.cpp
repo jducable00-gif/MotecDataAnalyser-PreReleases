@@ -176,31 +176,44 @@ static std::vector<int> versionSegments(const std::string& s) {
     for (; i < s.size(); ++i) {
         const unsigned char c = static_cast<unsigned char>(s[i]);
         if (isdigit(c)) {
-            // Premier chiffre du segment -> valeur initiale ; sinon accumulation.
             cur = (cur == -1) ? (c - '0') : cur * 10 + (c - '0');
         } else if (c == '.' && cur != -1) {
             segs.push_back(cur);   // séparateur de segments ("5.6" -> [5, 6])
             cur = -1;
         } else {
-            // Premier caractère non-chiffre après un chiffre ("-rc", " ") -> fin de la version.
             if (cur != -1) segs.push_back(cur);
-            break;
+            break; // Fin du parsing numérique dès le premier caractère non-chiffre/point après un chiffre.
         }
     }
     if (cur != -1) segs.push_back(cur);
     return segs;
 }
 
+// Helper pour détecter si une version est une pré-release (contient "-pre", "-rc", etc.)
+static bool isPreRelease(const std::string& s) {
+    std::string lower = s;
+    for (auto &c : lower) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    return (lower.find("-pre") != std::string::npos || lower.find("-rc") != std::string::npos || lower.find("-beta") != std::string::npos);
+}
+
 int compareVersions(const std::string& a, const std::string& b) {
     const std::vector<int> sa = versionSegments(a);
     const std::vector<int> sb = versionSegments(b);
     const size_t n = (sa.size() > sb.size()) ? sa.size() : sb.size();
+
     for (size_t i = 0; i < n; ++i) {
         const int va = (i < sa.size()) ? sa[i] : 0;   // segment manquant = 0
         const int vb = (i < sb.size()) ? sb[i] : 0;
         if (va != vb) return (va < vb) ? -1 : +1;
     }
-    return 0;
+
+    // Si les segments numériques sont identiques, on vérifie les suffixes.
+    // Une version "finale" est considérée comme plus récente qu'une pré-release du même numéro.
+    bool preA = isPreRelease(a);
+    bool preB = isPreRelease(b);
+
+    if (preA == preB) return 0; // Les deux sont pre ou les deux sont finales -> égaux numériquement.
+    return preA ? -1 : +1;      // a est pre et b n'est pas -> a < b. Inversement, a > b.
 }
 
 // true si le release porte un asset .exe téléchargeable (assetUrl non vide).

@@ -209,16 +209,43 @@ std::string R3eGetChannelTableWarning()
 // tireTemp0..11 keys use slot = wheelIndex*3 + {Inner=0, Middle=1, Outer=2}.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// R3eFeedLap — feed one frame into LapStats accumulators.
+// ... (rest of comments)
+// ---------------------------------------------------------------------------
+
 static const double DEG_PER_RAD = 180.0 / 3.14159265358979323846;   // local handling sample: rad/s -> deg/s (table row uses factor 57.29577951)
 static const double G = 9.81;                                       // local handling sample only — the dict carries RAW m/s^2
+
+// Pre-computed keys to avoid string allocations in the hot loop (R3eFeedLap).
+struct R3eStaticKeys {
+    std::string tire_pressure[4];
+    std::string tireAvgTemp[4];
+    std::string brake_temp[4];
+    std::string suspensionDeflection[4];
+    std::string damperVelocity[4];
+    std::string wheelSpeed[4];
+    std::string ride_height[4];
+    std::string tireWear[4];
+
+    R3eStaticKeys() {
+        for (int i = 0; i < 4; ++i) {
+            tire_pressure[i]     = "tire_pressure[" + std::to_string(i) + "]";
+            tireAvgTemp[i]       = "tireAvgTemp[" + std::to_string(i) + "]";
+            brake_temp[i]        = "brake_temp[" + std::to_string(i) + "]";
+            suspensionDeflection[i] = "suspensionDeflection[" + std::to_string(i) + "]";
+            damperVelocity[i]    = "damperVelocity[" + std::to_string(i) + "]";
+            wheelSpeed[i]        = "wheelSpeed[" + std::to_string(i) + "]";
+            ride_height[i]       = "ride_height[" + std::to_string(i) + "]";
+            tireWear[i]          = "tireWear[" + std::to_string(i) + "]";
+        }
+    }
+};
+static const R3eStaticKeys g_keys;
 
 void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds, SessionRecorder* rec)
 {
     LiveChannel::ResolvedChannelTable& table = R3eGetChannelTable();
-
-    auto idxKey = [](const char* name, int i) {
-        char buf[40]; snprintf(buf, sizeof(buf), "%s[%d]", name, i); return std::string(buf);
-    };
 
     // --- Raw channel dictionary (RAW values only - no unit conversion here). ---
     std::unordered_map<std::string, double> raw;
@@ -270,7 +297,7 @@ void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds, Sess
     // --- Per-wheel indexed channels + tyre temps (FL=0 FR=1 RL=2 RR=3). ---
     for (int i = 0; i < R3E_TIRE_INDEX_MAX; ++i) {
         if (std::isfinite(frame.tire_pressure[i]) && frame.tire_pressure[i] >= 0.0f)
-            raw[idxKey("tire_pressure", i)] = static_cast<double>(frame.tire_pressure[i]);   // kPa -> psi x0.1450377
+            raw[g_keys.tire_pressure[i]] = static_cast<double>(frame.tire_pressure[i]);   // kPa -> psi x0.1450377
 
         const r3e_tire_temp& tt = frame.tire_temp[i];
         double tempSum = 0.0; int tempCount = 0;
@@ -289,27 +316,27 @@ void R3eFeedLap(LapStats& lap, const r3e_shared& frame, double timeSeconds, Sess
             tempSum += t; ++tempCount;                                          // per-wheel average accumulator
         }
         if (tempCount > 0)
-            raw[idxKey("tireAvgTemp", i)] = tempSum / tempCount;                // Tyre_Temp_Avg_* row, degC f=1
+            raw[g_keys.tireAvgTemp[i]] = tempSum / tempCount;                // Tyre_Temp_Avg_* row, degC f=1
 
         const r3e_brake_temp& bt = frame.brake_temp[i];
         if (std::isfinite(bt.current_temp) && bt.current_temp >= 0.0f)
-            raw[idxKey("brake_temp", i)]     = static_cast<double>(bt.current_temp);                     // degC direct
+            raw[g_keys.brake_temp[i]]     = static_cast<double>(bt.current_temp);                     // degC direct
 
         const r3e_playerdata& p = frame.player;   // suspension/ride fields are playerdata-only (no top-level dups in v3.6)
         if (std::isfinite(p.suspension_deflection[i]))
-            raw[idxKey("suspensionDeflection", i)] = static_cast<double>(p.suspension_deflection[i]);   // m -> mm x1000 via table row
+            raw[g_keys.suspensionDeflection[i]] = static_cast<double>(p.suspension_deflection[i]);   // m -> mm x1000 via table row
 
         if (std::isfinite(p.suspension_velocity[i]))
-            raw[idxKey("damperVelocity", i)]  = static_cast<double>(p.suspension_velocity[i]);          // m/s -> mm/s x1000 via table row
+            raw[g_keys.damperVelocity[i]]  = static_cast<double>(p.suspension_velocity[i]);          // m/s -> mm/s x1000 via table row
 
         if (std::isfinite(frame.tire_speed[i]) && frame.tire_speed[i] >= 0.0f)
-            raw[idxKey("wheelSpeed", i)]      = static_cast<double>(frame.tire_speed[i]);               // m/s -> km/h x3.6
+            raw[g_keys.wheelSpeed[i]]      = static_cast<double>(frame.tire_speed[i]);               // m/s -> km/h x3.6
 
         if (std::isfinite(p.ride_height[i]))
-            raw[idxKey("ride_height", i)]     = static_cast<double>(p.ride_height[i]);                  // m -> mm x1000 via table row
+            raw[g_keys.ride_height[i]]     = static_cast<double>(p.ride_height[i]);                  // m -> mm x1000 via table row
 
         if (std::isfinite(frame.tire_wear[i]) && frame.tire_wear[i] >= 0.0f)
-            raw[idxKey("tireWear", i)]        = static_cast<double>(frame.tire_wear[i]);                // native ratio, f=1 rows (-1 N/A omitted)
+            raw[g_keys.tireWear[i]]        = static_cast<double>(frame.tire_wear[i]);                // native ratio, f=1 rows (-1 N/A omitted)
     }
 
     if (std::isfinite(frame.gear))   // dict-only extras: no LIVE mapping row today, harmless keys
