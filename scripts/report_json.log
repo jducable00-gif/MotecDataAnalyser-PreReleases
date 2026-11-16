@@ -1,4 +1,0 @@
-parsed 1 laps from C:\Users\Raymond\Documents\MotecDataAnalyser\data\samples\AC_EVO\Ferrari 296 GT3_preset_296gt3_mech_1_Circuit de Spa FrancorchampsGP_Mon Jun 15 223623 2026.ld
-{"version":1,"meta":{"carName":"","trackName":"","lapCountIncluded":1,"hasData":true},"sections":{"Summary":{"content":"At least three valid laps are required for an average analysis.","hasRecommendation":false},"General":{"content":"","hasRecommendation":false},"Tyre":{"content":"","hasRecommendation":false},"Brake":{"content":"","hasRecommendation":false},"Suspension":{"content":"","hasRecommendation":false},"EngineCooling":{"content":"","hasRecommendation":false},"Handling":{"content":"","hasRecommendation":false},"Diagnostics":{"content":"","hasRecommendation":false}},"lapStats":{}}
-
--- wrote 594 bytes to report_payload.json (language=0 profile=0 included~1)
