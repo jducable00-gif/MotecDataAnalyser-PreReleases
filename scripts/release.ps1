@@ -17,7 +17,9 @@
 # =============================================================================
 
 param(
-    [Parameter(Mandatory = $true)][string]$Version   # ex : v5.7 ou 5.7
+    [Parameter(Mandatory = $true)][string]$Version,  # ex : v5.7 ou 5.8
+    [switch]$Force                                    # skip the interactive "Proceed?" prompt (non-interactive hosts)
+
 )
 
 $ErrorActionPreference = 'Stop'
@@ -76,8 +78,12 @@ try {
         throw "kAppVersion is already '$currentVer' -- nothing to release."
     }
 
-    $answer = Read-Host "Proceed? (yes/no)"
-    if (-not ($answer.Trim().ToLower() -in @('y', 'yes'))) {
+    $proceed = [bool]$Force
+    if (-not $proceed) {
+        $answer = Read-Host "Proceed? (yes/no)"
+        $proceed = ($answer.Trim().ToLower() -in @('y', 'yes'))
+    }
+    if (-not $proceed) {
         Write-Host "Aborted. No changes made." -ForegroundColor Yellow
         return
     }
